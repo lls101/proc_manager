@@ -1,0 +1,9 @@
+{
+    "id": "mono_test",
+    "name": "Modbus任务",
+    "type": "task",
+    "command": "mono",
+    "args": "/root/workspace/net48/ModbusSimulator.exe",
+    "workingDir": "/root/workspace/scripts",
+    "autoStart": false
+}

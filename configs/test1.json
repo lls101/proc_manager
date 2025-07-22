@@ -1,0 +1,9 @@
+{
+    "id": "db-backup-task",
+    "name": "test",
+    "type": "task",
+    "command": "/root/workspace/scripts/test.sh",
+    "args": "",
+    "workingDir": "/root/workspace/scripts",
+    "autoStart": false
+}

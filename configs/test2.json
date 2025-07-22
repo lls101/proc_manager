@@ -1,0 +1,9 @@
+{
+    "id": "user-api-service",
+    "name": "java",
+    "type": "service",
+    "command": "/root/workspace/scripts/TimeLoop.jar",
+    "args": "-Xmx256m",
+    "workingDir": "/root/workspace/scripts",
+    "autoStart": true
+}
