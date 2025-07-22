@@ -8,7 +8,10 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QTimer>
-
+#ifdef Q_OS_LINUX
+#include <signal.h>
+#include <sys/types.h>
+#endif
 BackendWorker::BackendWorker(QObject *parent) : QObject(parent) {
     // 初始化CPU计算的基准值为0
     m_prevSystemWorkTime = 0;
@@ -102,7 +105,8 @@ void BackendWorker::performInitialSetup() {
     emit logMessage(QString::fromUtf8("后台线程：资源监控循环已启动。"));
 }
 
-// ==================== 最终的、可工作的 onMonitorTimeout 函数 ====================
+// ==================== 最终的、可工作的 onMonitorTimeout 函数
+// ====================
 void BackendWorker::onMonitorTimeout() {
     // --- 1. 更新系统全局资源 ---
 
@@ -118,14 +122,22 @@ void BackendWorker::onMonitorTimeout() {
             long long memTotal = 0, memAvailable = 0;
             foreach (const QString &line, lines) {
                 if (line.startsWith("MemTotal:")) {
-                    memTotal = line.section(':', 1).trimmed().split(' ').at(0).toLongLong();
+                    memTotal = line.section(':', 1)
+                                   .trimmed()
+                                   .split(' ')
+                                   .at(0)
+                                   .toLongLong();
                 } else if (line.startsWith("MemAvailable:")) {
-                    memAvailable = line.section(':', 1).trimmed().split(' ').at(0).toLongLong();
+                    memAvailable = line.section(':', 1)
+                                       .trimmed()
+                                       .split(' ')
+                                       .at(0)
+                                       .toLongLong();
                 }
             }
             if (memTotal > 0 && memAvailable >= 0) {
                 long long memUsed = memTotal - memAvailable;
-                    // 【修改点1】直接计算浮点数结果
+                // 【修改点1】直接计算浮点数结果
                 memPercent = ((double)(memUsed * 100.0) / memTotal);
             }
         }
@@ -150,11 +162,13 @@ void BackendWorker::onMonitorTimeout() {
         }
     }
 
-    if (m_prevSystemTotalTime > 0 && currentSystemTotalTime > m_prevSystemTotalTime) {
-        unsigned long long totalDelta = currentSystemTotalTime - m_prevSystemTotalTime;
-        unsigned long long workDelta = currentSystemWorkTime - m_prevSystemWorkTime;
+    if (m_prevSystemTotalTime > 0 &&
+        currentSystemTotalTime > m_prevSystemTotalTime) {
+        unsigned long long totalDelta =
+            currentSystemTotalTime - m_prevSystemTotalTime;
+        unsigned long long workDelta =
+            currentSystemWorkTime - m_prevSystemWorkTime;
         if (totalDelta > 0) {
-            
             cpuPercent = (workDelta * 100.0) / totalDelta;
         }
     }
@@ -185,22 +199,29 @@ void BackendWorker::onMonitorTimeout() {
         if (procStatFile.open(QIODevice::ReadOnly)) {
             QString content = procStatFile.readAll();
             procStatFile.close();
-            QStringList parts = content.mid(content.indexOf(')') + 2).split(' ');
+            QStringList parts =
+                content.mid(content.indexOf(')') + 2).split(' ');
             if (parts.size() > 13) {
                 unsigned long long utime = parts.at(11).toULongLong();
                 unsigned long long stime = parts.at(12).toULongLong();
                 unsigned long long processTotalTime = utime + stime;
-                if (m_prevProcessTime.contains(id) && m_prevSystemTotalTime > 0 && currentSystemTotalTime > m_prevSystemTotalTime) {
-                    unsigned long long processDelta = processTotalTime - m_prevProcessTime.value(id);
-                    unsigned long long systemDelta = currentSystemTotalTime - m_prevSystemTotalTime;
+                if (m_prevProcessTime.contains(id) &&
+                    m_prevSystemTotalTime > 0 &&
+                    currentSystemTotalTime > m_prevSystemTotalTime) {
+                    unsigned long long processDelta =
+                        processTotalTime - m_prevProcessTime.value(id);
+                    unsigned long long systemDelta =
+                        currentSystemTotalTime - m_prevSystemTotalTime;
                     if (systemDelta > 0) {
-                        processCpuUsage = (double)(processDelta * 100.0) / (double)systemDelta;
+                        processCpuUsage = (double)(processDelta * 100.0) /
+                                          (double)systemDelta;
                     }
                 }
                 m_prevProcessTime[id] = processTotalTime;
             }
         }
-        emit processStatusChanged(id, "Running", pid, processCpuUsage, processMemUsage);
+        emit processStatusChanged(id, "Running", pid, processCpuUsage,
+                                  processMemUsage);
     }
 
     // --- 3. 为下一次监控循环，更新系统时间基准值 ---
@@ -355,6 +376,30 @@ void BackendWorker::onProcessFinished(int exitCode,
 
     m_runningProcesses.remove(id);
     process->deleteLater();
+
+    // 在确认进程已完全停止并清理后，检查它是否需要被重启
+    if (m_restartQueue.contains(id)) {
+        // 从队列中移除
+        m_restartQueue.removeAll(id);
+
+        emit logMessage(
+            QString::fromUtf8(
+                "后台线程：检测到 %1 在重启队列中，将自动重新启动。")
+                .arg(id));
+
+        // 延迟一小段时间再启动，给系统一点喘息时间，避免“快速失败循环”
+        QTimer::singleShot(1000, this, SLOT(startProcessFromQueue()));
+        // 我们不能直接调用startProcess(id)，因为id是局部变量，为了安全传递，使用一个辅助槽
+        // 为了C++98兼容，我们将id临时存起来
+        m_lastToStart = id;
+    }
+}
+
+void BackendWorker::startProcessFromQueue() {
+    if (!m_lastToStart.isEmpty()) {
+        startProcess(m_lastToStart);
+        m_lastToStart.clear();
+    }
 }
 
 void BackendWorker::onProcessError(QProcess::ProcessError error) {
@@ -370,4 +415,39 @@ void BackendWorker::onProcessError(QProcess::ProcessError error) {
     emit processStatusChanged(id, "Error", -1, 0.0, 0.0);
     m_runningProcesses.remove(id);
     process->deleteLater();
+
+    // 如果一个进程在停止过程中就出错了，也检查一下是否需要重启
+    if (m_restartQueue.contains(id)) {
+        m_restartQueue.removeAll(id);
+        emit logMessage(
+            QString::fromUtf8(
+                "后台线程：检测到 %1 在重启队列中，将尝试重新启动。")
+                .arg(id));
+        QTimer::singleShot(1000, this, SLOT(startProcessFromQueue()));
+        m_lastToStart = id;
+    }
+}
+
+void BackendWorker::restartProcess(const QString &id) {
+    if (!m_runningProcesses.contains(id)) {
+        emit logMessage(
+            QString::fromUtf8("[警告] 尝试重启一个未在运行的服务ID: %1")
+                .arg(id));
+        // 如果服务未运行，可以直接尝试启动
+        startProcess(id);
+        return;
+    }
+
+    emit logMessage(
+        QString::fromUtf8(
+            "后台线程：收到重启请求: %1。正在加入重启队列并执行停止操作...")
+            .arg(id));
+
+    // 1. 将进程ID加入“待重启”队列
+    if (!m_restartQueue.contains(id)) {
+        m_restartQueue.append(id);
+    }
+
+    // 2. 调用现有的停止流程
+    stopProcess(id);
 }

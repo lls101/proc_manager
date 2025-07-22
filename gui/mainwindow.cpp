@@ -49,6 +49,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(this, SIGNAL(startProcessRequested(QString)), m_backendWorker,
             SLOT(startProcess(QString)));
 
+    connect(this, SIGNAL(restartProcessRequested(QString)), m_backendWorker,
+            SLOT(restartProcess(QString)));
+
     // New connection for stopping a process
     connect(this, SIGNAL(stopProcessRequested(QString)), m_backendWorker,
             SLOT(stopProcess(QString)));
@@ -63,7 +66,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 【关键修复2】系统指标更新连接
     connect(m_backendWorker, SIGNAL(systemMetricsUpdated(double, double)), this,
-        SLOT(onSystemMetricsUpdated(double, double)));
+            SLOT(onSystemMetricsUpdated(double, double)));
 
     // --- Start Thread ---
     m_workerThread->start();
@@ -159,14 +162,34 @@ void MainWindow::onSystemMetricsUpdated(double cpuPercent, double memPercent) {
              << "Memory:" << memPercent;
 
     // -1 是我们在后台设定的一个特殊值，表示本次轮询没有更新该项数据
-      if (cpuPercent >= 0.0) {
+    if (cpuPercent >= 0.0) {
         // QProgressBar只接受整数，我们把整数部分传给它用于显示长度
         ui->cpuProgressBar->setValue((int)cpuPercent);
         // 使用arg格式化字符串，'f'表示浮点数，2表示保留两位小数
-        ui->cpuProgressBar->setFormat(QString("CPU: %1%").arg(cpuPercent, 0, 'f', 2));
+        ui->cpuProgressBar->setFormat(
+            QString("CPU: %1%").arg(cpuPercent, 0, 'f', 2));
     }
     if (memPercent >= 0.0) {
         ui->memProgressBar->setValue((int)memPercent);
-        ui->memProgressBar->setFormat(QString("内存: %1%").arg(memPercent, 0, 'f', 2));
+        ui->memProgressBar->setFormat(
+            QString("内存: %1%").arg(memPercent, 0, 'f', 2));
+    }
+}
+
+void MainWindow::on_btnRestart_clicked() {
+    QModelIndexList selectedIndexes =
+        ui->tableView->selectionModel()->selectedIndexes();
+    if (selectedIndexes.isEmpty()) {
+        return;
+    }
+
+    int row = selectedIndexes.first().row();
+    QString id = m_processModel->getProcessId(row);
+
+    if (!id.isEmpty()) {
+        onLogMessageReceived(
+            QString::fromUtf8("UI：用户点击重启按钮，请求重启 %1").arg(id));
+        // 发射重启信号
+        emit restartProcessRequested(id);
     }
 }

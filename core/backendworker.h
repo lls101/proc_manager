@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QProcess>
 #include <QString>
+#include <QStringList>
 
 #include "processinfo.h"
 
@@ -32,6 +33,7 @@ public slots:
     void performInitialSetup();
     void startProcess(const QString &id);
     void stopProcess(const QString &id);
+    void restartProcess(const QString &id);
 
 private slots:
     void onProcessStarted();
@@ -41,12 +43,16 @@ private slots:
     // 3. 新增槽，由定时器触发，作为监控循环的入口
     void onMonitorTimeout();
 
+    void startProcessFromQueue();
+
 private:
     QMap<QString, ProcessInfo> m_processConfigs;
     QMap<QString, QProcess *> m_runningProcesses;
     QMap<QString, QTimer *> m_shutdownTimers;
+    QStringList m_restartQueue;
     // 4. 新增监控循环的定时器
     QTimer *m_monitorTimer;
+    QString m_lastToStart;
 
     // 5. 新增用于计算CPU使用率的辅助成员变量
     // 系统级
