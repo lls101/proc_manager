@@ -1,15 +1,17 @@
 #ifndef PROCESSINFO_H
 #define PROCESSINFO_H
 #include <QString>
+#include <QStringList>
 
 struct ProcessInfo {
     // 来自配置文件的静态信息
     QString id;    // 唯一标识符, e.g., "user-center-api"
     QString name;  // 用于UI显示的名称, e.g., "用户中心API"
     QString type;  // 类型: "service" (常驻服务) or "task" (计划任务)
-    QString command;     // 启动命令或JAR包路径
-    QString args;        // 启动参数
+    QString command;  // 启动命令或JAR包路径
+    QStringList args;
     QString workingDir;  // 工作目录
+    QString pidFile;
 
     struct Schedule {
         QString type;    // "daily", "weekly", "monthly"
@@ -43,7 +45,7 @@ struct ProcessInfo {
     // C++98兼容的构造函数，用于初始化默认值
     ProcessInfo() {
         autoStart = false;
-        pid = -1;
+        pid = 0;
         cpuUsage = 0.0;
         memUsage = 0.0;
         status = "Stopped";

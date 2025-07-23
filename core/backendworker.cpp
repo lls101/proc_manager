@@ -1,17 +1,20 @@
 #include "backendworker.h"
 
+#include <signal.h>
+#include <sys/types.h>
+
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
 #include <QTimer>
-#ifdef Q_OS_LINUX
-#include <signal.h>
-#include <sys/types.h>
-#endif
+#include <QDir>
+#include <QFileInfo>
+
 BackendWorker::BackendWorker(QObject *parent) : QObject(parent) {
     // 初始化CPU计算的基准值为0
     m_prevSystemWorkTime = 0;
@@ -39,6 +42,17 @@ BackendWorker::~BackendWorker() {
 void BackendWorker::performInitialSetup() {
     // This function's code is from the previous step and remains unchanged.
     emit logMessage(QString::fromUtf8("后台线程：开始扫描配置文件..."));
+
+     QString pidsPath = QCoreApplication::applicationDirPath() + "/pids";
+    QDir pidsDir(pidsPath);
+    if (!pidsDir.exists()) {
+        emit logMessage(QString::fromUtf8("后台线程：'pids' 目录不存在，正在创建于: %1").arg(pidsPath));
+        // mkpath可以递归创建路径，'.'代表创建pidsPath本身
+        if (!pidsDir.mkpath(".")) { 
+             emit logMessage(QString::fromUtf8("[严重错误] 无法创建 'pids' 目录！PID文件功能可能无法正常使用！"));
+        }
+    }
+
     QString configPath = QCoreApplication::applicationDirPath() + "/configs";
     QDir configDir(configPath);
     if (!configDir.exists()) {
@@ -92,9 +106,33 @@ void BackendWorker::performInitialSetup() {
         p.name = obj["name"].toString();
         p.type = obj["type"].toString();
         p.command = obj["command"].toString();
-        p.args = obj["args"].toString();
+
+        if (obj.contains("args") && obj["args"].isArray()) {
+            QJsonArray argsArray = obj["args"].toArray();
+            for (int j = 0; j < argsArray.size(); ++j) {
+                p.args.append(argsArray[j].toString());
+            }
+        }
         p.workingDir = obj["workingDir"].toString();
         p.autoStart = obj["autoStart"].toBool();
+        p.pidFile = obj["pidFile"].toString();
+
+
+         QString pidFileFromJson = obj["pidFile"].toString();
+        if (!pidFileFromJson.isEmpty()) {
+            QFileInfo fileInfo(pidFileFromJson);
+            if (fileInfo.isRelative()) {
+                // 如果是相对路径 (如 "test-script.pid")
+                // 就把它和我们创建的pids目录路径组合起来
+                p.pidFile = pidsDir.filePath(pidFileFromJson);
+                emit logMessage(QString::fromUtf8("检测到相对PID文件路径，将使用: %1").arg(p.pidFile));
+            } else {
+                // 如果是绝对路径 (如 "/var/run/another.pid")
+                // 就直接使用它，保持灵活性
+                p.pidFile = pidFileFromJson;
+            }
+        }
+
 
         if (p.type == "task" && obj.contains("schedule") &&
             obj["schedule"].isObject()) {
@@ -135,6 +173,7 @@ void BackendWorker::performInitialSetup() {
 // ====================
 void BackendWorker::onMonitorTimeout() {
     // --- 1. 更新系统全局资源 ---
+    // (这部分是你已实现的成熟代码，我们直接复用)
 
     // -- 系统内存 --
     QFile memFile("/proc/meminfo");
@@ -146,7 +185,9 @@ void BackendWorker::onMonitorTimeout() {
             QString contentStr(content);
             QStringList lines = contentStr.split('\n');
             long long memTotal = 0, memAvailable = 0;
-            foreach (const QString &line, lines) {
+            // C++98 兼容的 foreach
+            for (int i = 0; i < lines.count(); ++i) {
+                const QString &line = lines.at(i);
                 if (line.startsWith("MemTotal:")) {
                     memTotal = line.section(':', 1)
                                    .trimmed()
@@ -163,7 +204,6 @@ void BackendWorker::onMonitorTimeout() {
             }
             if (memTotal > 0 && memAvailable >= 0) {
                 long long memUsed = memTotal - memAvailable;
-                // 【修改点1】直接计算浮点数结果
                 memPercent = ((double)(memUsed * 100.0) / memTotal);
             }
         }
@@ -195,134 +235,216 @@ void BackendWorker::onMonitorTimeout() {
         unsigned long long workDelta =
             currentSystemWorkTime - m_prevSystemWorkTime;
         if (totalDelta > 0) {
-            cpuPercent = (workDelta * 100.0) / totalDelta;
+            cpuPercent = (double)(workDelta * 100.0) / totalDelta;
         }
     }
     emit systemMetricsUpdated(cpuPercent, memPercent);
 
-    // --- 2. 遍历所有正在运行的进程，更新它们各自的资源 ---
-    // (这部分代码无需修改，保持原样即可)
-    for (QMap<QString, QProcess *>::iterator it = m_runningProcesses.begin();
-         it != m_runningProcesses.end(); ++it) {
-        QString id = it.key();
-        QProcess *process = it.value();
-        long pid = process->processId();
-        if (pid <= 0) continue;
-
-        double processCpuUsage = 0.0;
-        double processMemUsage = 0.0;
-
-        QFile procMemFile(QString("/proc/%1/statm").arg(pid));
-        if (procMemFile.open(QIODevice::ReadOnly)) {
-            QStringList parts = QString(procMemFile.readAll()).split(' ');
-            if (parts.size() > 1) {
-                processMemUsage = parts.at(1).toLongLong() * 4 / 1024.0;
-            }
-            procMemFile.close();
-        }
-
-        QFile procStatFile(QString("/proc/%1/stat").arg(pid));
-        if (procStatFile.open(QIODevice::ReadOnly)) {
-            QString content = procStatFile.readAll();
-            procStatFile.close();
-            QStringList parts =
-                content.mid(content.indexOf(')') + 2).split(' ');
-            if (parts.size() > 13) {
-                unsigned long long utime = parts.at(11).toULongLong();
-                unsigned long long stime = parts.at(12).toULongLong();
-                unsigned long long processTotalTime = utime + stime;
-                if (m_prevProcessTime.contains(id) &&
-                    m_prevSystemTotalTime > 0 &&
-                    currentSystemTotalTime > m_prevSystemTotalTime) {
-                    unsigned long long processDelta =
-                        processTotalTime - m_prevProcessTime.value(id);
-                    unsigned long long systemDelta =
-                        currentSystemTotalTime - m_prevSystemTotalTime;
-                    if (systemDelta > 0) {
-                        processCpuUsage = (double)(processDelta * 100.0) /
-                                          (double)systemDelta;
-                    }
-                }
-                m_prevProcessTime[id] = processTotalTime;
-            }
-        }
-        emit processStatusChanged(id, "Running", pid, processCpuUsage,
-                                  processMemUsage);
-
+    // --- 2. [核心改造] 遍历所有已配置的服务，以PID文件为准更新状态 ---
+    QList<QString> all_ids = m_processConfigs.keys();
+    for (int i = 0; i < all_ids.count(); ++i) {
+        QString id = all_ids.at(i);
         ProcessInfo config = m_processConfigs.value(id);
-        if (config.healthCheckEnabled) {
-            bool isBreached = false;
-            QString breachReason;
 
-            if (config.maxCpu > 0 && processCpuUsage > config.maxCpu) {
-                isBreached = true;
-                breachReason = QString::fromUtf8("CPU占用超标 (%1% > %2%)")
-                                   .arg(processCpuUsage, 0, 'f', 1)
-                                   .arg(config.maxCpu, 0, 'f', 1);
-            } else if (config.maxMem > 0 && processMemUsage > config.maxMem) {
-                isBreached = true;
-                breachReason = QString::fromUtf8("内存占用超标 (%1MB > %2MB)")
-                                   .arg(processMemUsage, 0, 'f', 1)
-                                   .arg(config.maxMem, 0, 'f', 1);
+        // 只处理配置了PID文件的服务/任务
+        if (config.pidFile.isEmpty()) {
+            continue;
+        }
+
+        qint64 current_pid = 0;
+        QFile pidFile(config.pidFile);
+        if (pidFile.exists() && pidFile.open(QIODevice::ReadOnly)) {
+            QString pidStr = pidFile.readAll().trimmed();
+            pidFile.close();
+            bool ok;
+            current_pid = pidStr.toLongLong(&ok);
+            if (!ok) {
+                current_pid = 0;  // 如果PID文件内容不是有效数字，则PID为0
+            }
+        }
+
+        // 验证PID是否有效 (即系统中是否存在该进程)
+        bool process_exists = false;
+        if (current_pid > 0) {
+            // 在Linux上，kill(pid, 0) 是检查进程是否存在的标准、高效的方法。
+            // 它不发送任何信号，只是进行权限和存在性检查。
+            if (kill(current_pid, 0) == 0) {
+                process_exists = true;
+            }
+        }
+
+        if (process_exists) {
+            // 状态：进程正在运行
+            // 接下来获取该进程的详细资源占用信息并执行健康检查
+            double processCpuUsage = 0.0;
+            double processMemUsage = 0.0;
+
+            // 获取进程内存 (复用你已有的代码)
+            QFile procMemFile(QString("/proc/%1/statm").arg(current_pid));
+            if (procMemFile.open(QIODevice::ReadOnly)) {
+                QStringList parts = QString(procMemFile.readAll()).split(' ');
+                if (parts.size() > 1) {
+                    // RSS * pageSize / 1024 = MB
+                    processMemUsage = parts.at(1).toLongLong() * 4 / 1024.0;
+                }
+                procMemFile.close();
             }
 
-            if (isBreached) {
-                // 如果超标，增加计数器
-                int count = m_breachCounters.value(id, 0) + 1;
-                m_breachCounters[id] = count;
-                emit logMessage(
-                    QString::fromUtf8(
-                        "[警告] 服务 %1 健康检查异常: %2 (连续第 %3 次)")
-                        .arg(id)
-                        .arg(breachReason)
-                        .arg(count));
+            // 获取进程CPU (复用你已有的代码)
+            QFile procStatFile(QString("/proc/%1/stat").arg(current_pid));
+            if (procStatFile.open(QIODevice::ReadOnly)) {
+                QString content = procStatFile.readAll();
+                procStatFile.close();
+                // 跳过括号内的进程名
+                QStringList parts =
+                    content.mid(content.indexOf(')') + 2).split(' ');
+                if (parts.size() > 13) {
+                    unsigned long long utime =
+                        parts.at(11).toULongLong();  // 用户态时间
+                    unsigned long long stime =
+                        parts.at(12).toULongLong();  // 内核态时间
+                    unsigned long long processTotalTime = utime + stime;
+                    if (m_prevProcessTime.contains(id) &&
+                        m_prevSystemTotalTime > 0 &&
+                        currentSystemTotalTime > m_prevSystemTotalTime) {
+                        unsigned long long processDelta =
+                            processTotalTime - m_prevProcessTime.value(id);
+                        unsigned long long systemDelta =
+                            currentSystemTotalTime - m_prevSystemTotalTime;
+                        if (systemDelta > 0) {
+                            processCpuUsage = (double)(processDelta * 100.0) /
+                                              (double)systemDelta;
+                        }
+                    }
+                    m_prevProcessTime[id] = processTotalTime;
+                }
+            }
 
-                // 连续3次超标，触发自愈
-                if (count >= 3) {
+
+             if (config.status != "Running") {
+                    m_processConfigs[id].status = "Running"; // <-- 添加此行
+                }
+            // 发送更新信号
+            emit processStatusChanged(id, "Running", current_pid,
+                                      processCpuUsage, processMemUsage);
+
+            // 执行健康检查 (复用你已有的代码)
+            if (config.healthCheckEnabled) {
+                bool isBreached = false;
+                QString breachReason;
+
+                if (config.maxCpu > 0 && processCpuUsage > config.maxCpu) {
+                    isBreached = true;
+                    breachReason = QString::fromUtf8("CPU占用超标 (%1% > %2%)")
+                                       .arg(processCpuUsage, 0, 'f', 1)
+                                       .arg(config.maxCpu, 0, 'f', 1);
+                } else if (config.maxMem > 0 &&
+                           processMemUsage > config.maxMem) {
+                    isBreached = true;
+                    breachReason =
+                        QString::fromUtf8("内存占用超标 (%1MB > %2MB)")
+                            .arg(processMemUsage, 0, 'f', 1)
+                            .arg(config.maxMem, 0, 'f', 1);
+                }
+
+                if (isBreached) {
+                    int count = m_breachCounters.value(id, 0) + 1;
+                    m_breachCounters[id] = count;
                     emit logMessage(
                         QString::fromUtf8(
-                            "[自愈] 服务 %1 连续3次资源超标，触发自动重启！")
-                            .arg(id));
-                    restartProcess(id);
-                    m_breachCounters.remove(id);  // 重启后计数器清零
-                }
-            } else {
-                // 如果本次未超标，则清零计数器
-                if (m_breachCounters.contains(id)) {
-                    emit logMessage(
-                        QString::fromUtf8("[信息] 服务 %1 健康状态已恢复。")
-                            .arg(id));
-                    m_breachCounters.remove(id);
+                            "[警告] 服务 %1 健康检查异常: %2 (连续第 %3 次)")
+                            .arg(id)
+                            .arg(breachReason)
+                            .arg(count));
+                    if (count >= 3) {
+                        emit logMessage(
+                            QString::fromUtf8("[自愈] 服务 %1 "
+                                              "连续3次资源超标，触发自动重启！")
+                                .arg(id));
+                        restartProcess(id);
+                        m_breachCounters.remove(id);
+                    }
+                } else {
+                    if (m_breachCounters.contains(id)) {
+                        emit logMessage(
+                            QString::fromUtf8("[信息] 服务 %1 健康状态已恢复。")
+                                .arg(id));
+                        m_breachCounters.remove(id);
+                    }
                 }
             }
+        } else {
+             // 状态：进程已停止 (PID文件不存在，或PID无效)
+    
+    // 【核心修正】只有当一个进程的“前一个状态”是Running时，
+    // 我们才认为它是“意外终止”。如果它还在"Starting..."状态，
+    // 我们就给它多一点时间，什么也不做，等待onProcessStarted去创建PID文件。
+    if (config.status == "Running") {
+        
+        emit logMessage(QString::fromUtf8("[警告] 正在运行的服务 %1 已意外终止！PID文件或进程已消失。").arg(id));
+
+        // 如果我们还持有它的QProcess句柄，就清理掉
+        if (m_runningProcesses.contains(id)) {
+            m_runningProcesses.value(id)->deleteLater();
+            m_runningProcesses.remove(id);
+        }
+
+        // 检查是否需要自愈重启
+        if (config.autoStart) {
+            emit logMessage(QString::fromUtf8("[自愈] 服务 %1 配置为自动重启，正在启动...").arg(id));
+            QTimer::singleShot(2000, this, SLOT(startProcessFromQueue()));
+            m_lastToStart = id;
+        }
+    }
+    
+    // 无论如何，只要此刻进程不存在，它的最终状态就是 "Stopped"。
+    // 但只有当状态确实发生改变时我们才更新，避免不必要的信号发射。
+    if (config.status != "Stopped") {
+        m_processConfigs[id].status = "Stopped";
+        //emit processStatusChanged(id, "Stopped", 0, 0.0, 0.0);
+    }
         }
     }
 
     // --- 3. 为下一次监控循环，更新系统时间基准值 ---
+    // (这部分是你已实现的成熟代码，我们直接复用)
     m_prevSystemTotalTime = currentSystemTotalTime;
     m_prevSystemWorkTime = currentSystemWorkTime;
 }
 
 void BackendWorker::startProcess(const QString &id) {
-    // This function's code is from the previous step and remains unchanged.
     if (!m_processConfigs.contains(id)) {
         emit logMessage(
             QString::fromUtf8("[错误] 尝试启动一个未知的服务ID: %1").arg(id));
         return;
     }
+
+    // This check prevents this instance of the tool from trying to start the
+    // same process twice. The ultimate authority on whether it's running is the
+    // PID file, checked in the monitor loop.
     if (m_runningProcesses.contains(id)) {
         emit logMessage(
-            QString::fromUtf8("[警告] 服务 %1 已经在运行中。").arg(id));
+            QString::fromUtf8(
+                "[警告] 服务 %1 已由本工具启动，正在等待其状态更新。")
+                .arg(id));
         return;
     }
+
     emit logMessage(
         QString::fromUtf8("后台线程：收到启动服务请求: %1").arg(id));
-    emit processStatusChanged(id, "Starting...", -1, 0.0, 0.0);
+    // Update UI immediately to show a "Starting..." state. PID is 0 as we don't
+    // know it yet.
+    emit processStatusChanged(id, "Starting...", 0, 0.0, 0.0);
+    m_processConfigs[id].status = "Starting...";
 
     ProcessInfo config = m_processConfigs[id];
     QProcess *process = new QProcess(this);
+
+    // Store the QProcess handle. This is useful for catching console output or
+    // errors from the process during its lifetime, especially during startup.
     m_runningProcesses[id] = process;
 
+    // Connect signals to handle events from this specific process instance
     connect(process, SIGNAL(started()), this, SLOT(onProcessStarted()));
     connect(process, SIGNAL(finished(int, QProcess::ExitStatus)), this,
             SLOT(onProcessFinished(int, QProcess::ExitStatus)));
@@ -332,141 +454,243 @@ void BackendWorker::startProcess(const QString &id) {
     process->setWorkingDirectory(config.workingDir);
 
     QString command = config.command;
-    QStringList arguments;
-
-    if (command.toLower().endsWith(".jar")) {
-        QStringList jvmArgs = config.args.split(' ', QString::SkipEmptyParts);
-        arguments << jvmArgs;
-        arguments << "-jar" << command;
-#ifdef Q_OS_WIN
-        command = "java.exe";
-#else
-        command = "java";
-#endif
-        emit logMessage(
-            QString::fromUtf8("检测到JAR包，使用 %1 启动。").arg(command));
-    } else {
-        arguments = config.args.split(' ', QString::SkipEmptyParts);
-    }
+    // We now directly use the QStringList from our config, which is more
+    // robust.
+    QStringList arguments = config.args;
 
     emit logMessage(QString::fromUtf8("执行命令: %1 %2")
                         .arg(command)
                         .arg(arguments.join(" ")));
+
+    // Launch the process and let it run. We do not block or wait here.
+    // The onMonitorTimeout loop will take care of detecting the PID file.
     process->start(command, arguments);
 }
 
 void BackendWorker::stopProcess(const QString &id) {
-    if (!m_runningProcesses.contains(id)) {
+    if (!m_processConfigs.contains(id)) {
         emit logMessage(
-            QString::fromUtf8("[警告] 尝试停止一个未在运行的服务ID: %1")
+            QString::fromUtf8("[错误] 尝试停止一个未知的服务ID: %1").arg(id));
+        return;
+    }
+
+    ProcessInfo config = m_processConfigs.value(id);
+    if (config.pidFile.isEmpty()) {
+        emit logMessage(
+            QString::fromUtf8(
+                "[错误] 服务 %1 未配置PID文件，无法通过此方式停止。")
                 .arg(id));
         return;
     }
 
-    emit logMessage(
-        QString::fromUtf8("后台线程：收到停止服务请求: %1。尝试优雅关闭...")
-            .arg(id));
+    // 1. Read the PID from the PID file. This is now the source of truth.
+    qint64 pid = 0;
+    QFile pidFile(config.pidFile);
+    if (pidFile.open(QIODevice::ReadOnly)) {
+        bool ok;
+        pid = pidFile.readAll().trimmed().toLongLong(&ok);
+        pidFile.close();
+        if (!ok) {
+            pid = 0;
+        }
+    }
 
-    QProcess *process = m_runningProcesses.value(id);
-    emit processStatusChanged(id, "Stopping...", process->processId(), 0.0,
-                              0.0);
-    process->terminate();
-
-    process->terminate();
-
-    QTimer *shutdownTimer = new QTimer(this);
-    shutdownTimer->setSingleShot(true);
-
-    shutdownTimer->setObjectName(id);
-    connect(shutdownTimer, SIGNAL(timeout()), this,
-            SLOT(onGracefulShutdownTimeout()));
-
-    m_shutdownTimers[id] = shutdownTimer;
-    shutdownTimer->start(10000);  // 10 second timeout
-}
-
-void BackendWorker::onGracefulShutdownTimeout() {
-    QTimer *timer = qobject_cast<QTimer *>(sender());
-    if (!timer) return;
-
-    QString id = timer->objectName();
-
-    if (!m_runningProcesses.contains(id)) {
-        m_shutdownTimers.remove(id);
-        timer->deleteLater();
+    if (pid <= 0) {
+        emit logMessage(
+            QString::fromUtf8(
+                "[警告] 无法从 %1 读取有效的PID，或者服务已经停止。")
+                .arg(config.pidFile));
+        // Ensure the UI is synchronized to the "Stopped" state.
+        emit processStatusChanged(id, "Stopped", 0, 0.0, 0.0);
         return;
     }
 
     emit logMessage(
-        QString::fromUtf8("[警告] 服务 %1 未能在10秒内优雅退出。强制终止...")
-            .arg(id));
+        QString::fromUtf8(
+            "后台线程：收到停止服务请求: %1 (PID: %2)。尝试优雅关闭...")
+            .arg(id)
+            .arg(pid));
+    emit processStatusChanged(id, "Stopping...", pid, 0.0, 0.0);
+    m_processConfigs[id].status = "Stopping...";
 
-    QProcess *process = m_runningProcesses.value(id);
-    process->kill();
+    // 2. Send the SIGTERM signal using the kill system call for a graceful
+    // shutdown.
+    if (kill(pid, SIGTERM) == 0) {
+        emit logMessage(
+            QString::fromUtf8("成功发送SIGTERM到PID %1。等待10秒...").arg(pid));
 
-    m_shutdownTimers.remove(id);
+        // 3. Reuse the graceful shutdown timer pattern.
+        // If the process doesn't exit within 10 seconds, we'll forcefully kill
+        // it.
+        QTimer *shutdownTimer = new QTimer(this);
+        shutdownTimer->setSingleShot(true);
+
+        // Store the PID in the timer's objectName property for later retrieval.
+        // This is a convenient way to pass data to the timeout slot.
+        shutdownTimer->setObjectName(QString::number(pid));
+
+        // We connect the timer to a modified timeout slot that now also needs
+        // the original service ID. To handle this in a C++98-compatible way, we
+        // can use a QSignalMapper or simply have a member variable to store the
+        // context, but for simplicity, we'll adapt the slot. Let's assume
+        // onGracefulShutdownTimeout can find the 'id' from the PID. For a more
+        // robust solution, you'd map the timer object to the id. Let's modify
+        // the onGracefulShutdownTimeout to be smarter.
+        m_shutdownPidToIdMap[pid] = id;
+        connect(shutdownTimer, SIGNAL(timeout()), this,
+                SLOT(onGracefulShutdownTimeout()));
+
+        shutdownTimer->start(10000);  // 10 second timeout
+
+    } else {
+        // This can happen if the process terminated between reading the PID and
+        // sending the signal, or if we don't have permission to send the
+        // signal.
+        emit logMessage(
+            QString::fromUtf8(
+                "[错误] 发送SIGTERM到PID %1 失败。可能进程已不存在或权限不足。")
+                .arg(pid));
+        emit processStatusChanged(id, "Stopped", 0, 0.0, 0.0);
+    }
+}
+void BackendWorker::onGracefulShutdownTimeout() {
+    QTimer *timer = qobject_cast<QTimer *>(sender());
+    if (!timer) return;
+
+    qint64 pid = timer->objectName().toLongLong();
+    if (pid <= 0 || !m_shutdownPidToIdMap.contains(pid)) {
+        timer->deleteLater();
+        return;
+    }
+
+    QString id = m_shutdownPidToIdMap.value(pid);
+
+    // Check if the process is still alive
+    if (kill(pid, 0) == 0) {
+        emit logMessage(
+            QString::fromUtf8("[警告] 服务 %1 (PID: %2) "
+                              "未能在10秒内优雅退出。强制终止 (SIGKILL)...")
+                .arg(id)
+                .arg(pid));
+        kill(pid, SIGKILL);
+    }
+
+    m_shutdownPidToIdMap.remove(pid);
     timer->deleteLater();
 }
 
 void BackendWorker::onProcessStarted() {
+    // 1. 获取是哪个QProcess对象发送了这个信号
     QProcess *process = qobject_cast<QProcess *>(sender());
-    if (!process) return;
+    if (!process) {
+        return;
+    }
+
+    // 2. 通过QProcess对象找到它对应的服务ID
+    //    我们之前在startProcess中已经将它们关联到m_runningProcesses中了
     QString id = m_runningProcesses.key(process);
-    if (id.isEmpty()) return;
-    long pid = process->processId();
+    if (id.isEmpty()) {
+        emit logMessage(QString::fromUtf8("[错误] 收到一个未知进程的started()信号。"));
+        return;
+    }
 
-    m_prevProcessTime[id] = 0;  // 初始化进程CPU时间记录
+    // 3. 获取该服务的配置信息，主要是为了得到pidFile的路径
+    ProcessInfo config = m_processConfigs.value(id);
+    if (config.pidFile.isEmpty()) {
+        // 如果没有配置PID文件，我们就不处理，但这种情况理论上不应发生
+        emit logMessage(QString::fromUtf8("[警告] 服务 %1 已启动，但未配置PID文件，无法进行状态管理。").arg(id));
+        return;
+    }
 
-    emit logMessage(
-        QString::fromUtf8("服务 %1 已成功启动, PID: %2").arg(id).arg(pid));
-    emit processStatusChanged(id, "Running", pid, 0.0, 0.0);
+    // 4. 获取真实的PID
+    qint64 pid = process->processId();
+    if (pid <= 0) {
+        emit logMessage(QString::fromUtf8("[错误] 服务 %1 已启动，但无法获取有效的PID。").arg(id));
+        return;
+    }
+
+    // 5. 【核心】将获取到的PID写入文件
+    QFile pidFile(config.pidFile);
+    // 以写入模式打开文件，如果文件已存在则清空内容
+    if (!pidFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        emit logMessage(QString::fromUtf8("[严重错误] 无法打开或创建PID文件 %1 进行写入！").arg(config.pidFile));
+        // 即使无法写入PID文件，进程本身也已经启动了，这是一个危险状态
+        // 我们可以选择立即杀死它，或者让它继续运行但无法被管理
+        // 此处只打印日志，让用户知晓
+        return;
+    }
+    
+    QTextStream out(&pidFile);
+    out << pid; // 将PID写入文件
+    pidFile.close();
+
+    emit logMessage(QString::fromUtf8("服务 %1 已成功启动, PID: %2。PID文件已创建于: %3").arg(id).arg(pid).arg(config.pidFile));
+
+    // 注意：我们不再在这里发送 processStatusChanged 信号。
+    // onMonitorTimeout 循环会读取到新创建的PID文件，并自然地更新UI状态，
+    // 这保持了“单一事实来源”原则。
 }
 
-void BackendWorker::onProcessFinished(int exitCode,
-                                      QProcess::ExitStatus exitStatus) {
+void BackendWorker::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus) {
     QProcess *process = qobject_cast<QProcess *>(sender());
-    if (!process) return;
+    if (!process) {
+        return;
+    }
 
     QString id = m_runningProcesses.key(process);
-    if (id.isEmpty()) return;
+    if (id.isEmpty()) {
+        return; 
+    }
 
+    // 1. 获取配置信息，为后续操作做准备
+    ProcessInfo config = m_processConfigs.value(id);
+    
+    // 2. 清理PID文件
+    if (!config.pidFile.isEmpty()) {
+        QFile pidFile(config.pidFile);
+        if (pidFile.exists()) {
+            pidFile.remove();
+        }
+    }
+
+    // 3. 【核心修正】在所有判断之前，立即更新内部权威状态！
+    // 这样，即使onMonitorTimeout立刻运行，它读到的状态也是正确的"Stopped"。
+    m_processConfigs[id].status = "Stopped";
+    // 同时，我们让onProcessFinished也负责发出最终的"Stopped"状态信号，而不是依赖监控循环。
+    // 这使得状态更新更及时。
+    emit processStatusChanged(id, "Stopped", 0, 0.0, 0.0);
+
+    // 4. 根据退出状态准备日志信息
+    QString status_msg = (exitStatus == QProcess::NormalExit)
+        ? QString::fromUtf8("正常退出, 代码: %1").arg(exitCode)
+        : QString::fromUtf8("崩溃退出");
+    emit logMessage(QString::fromUtf8("服务 %1 已停止。%2").arg(id).arg(status_msg));
+
+    // 5. 清理其他资源
     m_breachCounters.remove(id);
-
+    m_prevProcessTime.remove(id);
     if (m_shutdownTimers.contains(id)) {
-        emit logMessage(QString::fromUtf8("服务 %1 已成功优雅退出。").arg(id));
         QTimer *timer = m_shutdownTimers.value(id);
         timer->stop();
         m_shutdownTimers.remove(id);
         timer->deleteLater();
     }
-
-    m_prevProcessTime.remove(id);
-    QString status_msg =
-        (exitStatus == QProcess::NormalExit)
-            ? QString::fromUtf8("正常退出, 代码: %1").arg(exitCode)
-            : QString::fromUtf8("崩溃退出");
-
-    emit logMessage(
-        QString::fromUtf8("服务 %1 已停止。%2").arg(id).arg(status_msg));
-    emit processStatusChanged(id, "Stopped", -1, 0.0, 0.0);
-
+    
+    // 6. 清理QProcess对象
     m_runningProcesses.remove(id);
     process->deleteLater();
 
-    // 在确认进程已完全停止并清理后，检查它是否需要被重启
-    if (m_restartQueue.contains(id)) {
-        // 从队列中移除
+    // 7. 【逻辑优化】只有在进程崩溃时，才考虑触发自愈逻辑
+    if (exitStatus != QProcess::NormalExit && config.autoStart) {
+        emit logMessage(QString::fromUtf8("[自愈] 服务 %1 异常终止，配置为自动重启，正在启动...").arg(id));
+        QTimer::singleShot(2000, this, SLOT(startProcessFromQueue()));
+        m_lastToStart = id;
+    } 
+    // 检查是否在“重启”流程中
+    else if (m_restartQueue.contains(id)) {
         m_restartQueue.removeAll(id);
-
-        emit logMessage(
-            QString::fromUtf8(
-                "后台线程：检测到 %1 在重启队列中，将自动重新启动。")
-                .arg(id));
-
-        // 延迟一小段时间再启动，给系统一点喘息时间，避免“快速失败循环”
+        emit logMessage(QString::fromUtf8("后台线程：检测到 %1 在重启队列中，将自动重新启动。").arg(id));
         QTimer::singleShot(1000, this, SLOT(startProcessFromQueue()));
-        // 我们不能直接调用startProcess(id)，因为id是局部变量，为了安全传递，使用一个辅助槽
-        // 为了C++98兼容，我们将id临时存起来
         m_lastToStart = id;
     }
 }
@@ -481,27 +705,69 @@ void BackendWorker::startProcessFromQueue() {
 void BackendWorker::onProcessError(QProcess::ProcessError error) {
     QProcess *process = qobject_cast<QProcess *>(sender());
     if (!process) return;
+
     QString id = m_runningProcesses.key(process);
     if (id.isEmpty()) return;
 
-    m_breachCounters.remove(id);
+    ProcessInfo config = m_processConfigs.value(id);
 
-    m_prevProcessTime.remove(id);
-    emit logMessage(QString::fromUtf8("[严重错误] 服务 %1 启动失败: %2")
-                        .arg(id)
-                        .arg(process->errorString()));
-    emit processStatusChanged(id, "Error", -1, 0.0, 0.0);
+    // 【核心修正】判断这次“崩溃”是不是在我们“停止”过程中发生的
+    if (error == QProcess::Crashed && config.status == "Stopping...") {
+        // 如果是，这其实是我们的stopProcess()调用成功了！
+        // 我们把它当作一次成功的停止来处理。
+        emit logMessage(QString::fromUtf8("服务 %1 (PID: %2) 已成功停止。").arg(id).arg(process->processId()));
+
+        // 手动执行所有清理工作，因为onProcessFinished不会被调用
+        // 1. 清理PID文件
+        if (!config.pidFile.isEmpty()) {
+            QFile pidFile(config.pidFile);
+            if (pidFile.exists()) {
+                pidFile.remove();
+            }
+        }
+        
+        // 2. 更新最终状态
+        m_processConfigs[id].status = "Stopped";
+        emit processStatusChanged(id, "Stopped", 0, 0.0, 0.0);
+
+        // 3. 清理资源
+        m_breachCounters.remove(id);
+        m_prevProcessTime.remove(id);
+
+        // 如果有关闭定时器，也清理掉
+        qint64 pid = process->processId();
+        if (m_shutdownPidToIdMap.contains(pid)) {
+             // 找到对应的timer并停止它
+            QList<QTimer*> timers = this->findChildren<QTimer*>();
+            for(int i = 0; i < timers.size(); ++i) {
+                if(timers.at(i)->objectName() == QString::number(pid)) {
+                    timers.at(i)->stop();
+                    timers.at(i)->deleteLater();
+                    break;
+                }
+            }
+            m_shutdownPidToIdMap.remove(pid);
+        }
+
+    } else {
+        // 如果不是在“停止”过程中崩溃的，那就是一次真正的错误
+        emit logMessage(QString::fromUtf8("[严重错误] 服务 %1 启动失败或意外崩溃: %2")
+                            .arg(id)
+                            .arg(process->errorString()));
+        
+        // 更新状态为Error
+        m_processConfigs[id].status = "Error";
+        emit processStatusChanged(id, "Error", -1, 0.0, 0.0);
+    }
+    
+    // 无论哪种情况，QProcess句柄都需要被清理
     m_runningProcesses.remove(id);
     process->deleteLater();
 
-    // 如果一个进程在停止过程中就出错了，也检查一下是否需要重启
-    if (m_restartQueue.contains(id)) {
-        m_restartQueue.removeAll(id);
-        emit logMessage(
-            QString::fromUtf8(
-                "后台线程：检测到 %1 在重启队列中，将尝试重新启动。")
-                .arg(id));
-        QTimer::singleShot(1000, this, SLOT(startProcessFromQueue()));
+    // 检查是否需要重启（只在真正的崩溃后）
+    if (config.status != "Stopping..." && config.autoStart) {
+        emit logMessage(QString::fromUtf8("[自愈] 服务 %1 异常终止，配置为自动重启，正在启动...").arg(id));
+        QTimer::singleShot(2000, this, SLOT(startProcessFromQueue()));
         m_lastToStart = id;
     }
 }

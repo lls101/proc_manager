@@ -2,8 +2,18 @@
     "id": "user-api-service",
     "name": "java",
     "type": "service",
-    "command": "/root/workspace/scripts/TimeLoop.jar",
-    "args": "-Xmx256m",
+    "command": "/usr/bin/java",
+    "args": [
+    "-Xmx512m",
+    "-jar",
+    "/root/workspace/scripts/TimeLoop.jar"
+  ],
     "workingDir": "/root/workspace/scripts",
-    "autoStart": true
+    "pidFile": "my-java-app.pid",
+    "autoStart": true,
+    "healthCheck": {
+        "enabled": true,
+        "maxCpu": 80.0,
+        "maxMem": 80.0
+    }
 }

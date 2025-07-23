@@ -71,6 +71,8 @@ private:
     QDateTime m_lastSchedulerCheckTime;  // 上次检查调度的时间
     QDateTime calculateNextDueTime(const ProcessInfo::Schedule &schedule,
                                    const QDateTime &after);
+
+    QMap<qint64, QString> m_shutdownPidToIdMap;
 };
 
 #endif  // BACKENDWORKER_H

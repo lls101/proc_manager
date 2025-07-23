@@ -2,8 +2,16 @@
     "id": "db-backup-task",
     "name": "test",
     "type": "task",
-    "command": "/root/workspace/scripts/test.sh",
-    "args": "",
+    "command": "/bin/bash",
+    "args": [
+    "/root/workspace/scripts/test.sh"
+  ],
     "workingDir": "/root/workspace/scripts",
-    "autoStart": false
+    "pidFile": "backup-task.pid",
+    "autoStart": false,
+     "schedule": {
+        "type": "daily",
+        "hour": 14,
+        "minute": 5
+    }
 }

@@ -1,9 +1,12 @@
 {
     "id": "mono_test",
     "name": "Modbus任务",
-    "type": "task",
+    "type": "service",
     "command": "mono",
-    "args": "/root/workspace/net48/ModbusSimulator.exe",
+    "args": [
+        "/root/workspace/net48/ModbusSimulator.exe"
+    ],
+    "pidFile": "mono.pid",
     "workingDir": "/root/workspace/scripts",
     "autoStart": false
 }
