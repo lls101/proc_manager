@@ -25,6 +25,8 @@ signals:
 
     void restartProcessRequested(const QString &id);
 
+    void serviceAddedRequest(const QString &newConfigPath);
+
 private slots:
     void onLogMessageReceived(const QString &message);
     void onInitialSetupCompleted();
@@ -35,6 +37,8 @@ private slots:
     void on_btnRestart_clicked();
     //用于更新系统状态的UI控件
     void onSystemMetricsUpdated(double cpuPercent, double memPercent);
+
+    void on_btnAdd_clicked();
 
 private:
     Ui::MainWindow *ui;

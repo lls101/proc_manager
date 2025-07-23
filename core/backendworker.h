@@ -28,12 +28,16 @@ signals:
     // --- 内部逻辑信号，用于延迟重启 ---
     void delayedStartSignal();
 
+    void processInfoAdded(const ProcessInfo &info);
+
 public slots:
     // --- 由主线程调用的核心槽函数 ---
     void performInitialSetup();
     void startProcess(const QString &id);
     void stopProcess(const QString &id);
     void restartProcess(const QString &id);
+
+    void onServiceAdded(const QString &newConfigPath);
 
 private slots:
     // --- 定时器触发的槽函数 ---

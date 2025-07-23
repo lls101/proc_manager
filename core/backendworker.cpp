@@ -9,6 +9,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMessageBox>
 #include <QProcess>
 #include <QTextStream>
 #include <QTimer>
@@ -32,8 +33,6 @@ BackendWorker::BackendWorker(QObject *parent) : QObject(parent) {
 
 BackendWorker::~BackendWorker() {}
 
-
-
 void BackendWorker::performInitialSetup() {
     // --- 1. 初始化日志与pids目录 ---
     emit logMessage(QString::fromUtf8("后台线程：开始初始化设置..."));
@@ -41,9 +40,13 @@ void BackendWorker::performInitialSetup() {
     QString pidsPath = QCoreApplication::applicationDirPath() + "/pids";
     QDir pidsDir(pidsPath);
     if (!pidsDir.exists()) {
-        emit logMessage(QString::fromUtf8("后台线程：'pids' 目录不存在，正在创建于: %1").arg(pidsPath));
+        emit logMessage(
+            QString::fromUtf8("后台线程：'pids' 目录不存在，正在创建于: %1")
+                .arg(pidsPath));
         if (!pidsDir.mkpath(".")) {
-             emit logMessage(QString::fromUtf8("[严重错误] 无法创建 'pids' 目录！PID文件功能可能无法正常使用！"));
+            emit logMessage(
+                QString::fromUtf8("[严重错误] 无法创建 'pids' "
+                                  "目录！PID文件功能可能无法正常使用！"));
         }
     }
 
@@ -51,38 +54,49 @@ void BackendWorker::performInitialSetup() {
     QString configPath = QCoreApplication::applicationDirPath() + "/configs";
     QDir configDir(configPath);
     if (!configDir.exists()) {
-        emit logMessage(QString::fromUtf8("[错误] 'configs' 目录未找到，路径: %1").arg(configPath));
+        emit logMessage(
+            QString::fromUtf8("[错误] 'configs' 目录未找到，路径: %1")
+                .arg(configPath));
         return;
     }
-    
+
     QStringList nameFilters;
     nameFilters << "*.json";
-    QStringList files = configDir.entryList(nameFilters, QDir::Files | QDir::Readable, QDir::Name);
+    QStringList files = configDir.entryList(
+        nameFilters, QDir::Files | QDir::Readable, QDir::Name);
     if (files.isEmpty()) {
-        emit logMessage(QString::fromUtf8("[警告] 在 'configs' 目录中没有找到任何.json配置文件。"));
+        emit logMessage(QString::fromUtf8(
+            "[警告] 在 'configs' 目录中没有找到任何.json配置文件。"));
     }
-    
+
     m_processConfigs.clear();
 
     for (int i = 0; i < files.count(); ++i) {
         QString filePath = configDir.absoluteFilePath(files.at(i));
-        emit logMessage(QString::fromUtf8("后台线程：正在解析 %1").arg(files.at(i)));
+        emit logMessage(
+            QString::fromUtf8("后台线程：正在解析 %1").arg(files.at(i)));
         QFile file(filePath);
         if (!file.open(QIODevice::ReadOnly)) {
-            emit logMessage(QString::fromUtf8("[错误] 打开文件失败: %1").arg(filePath));
+            emit logMessage(
+                QString::fromUtf8("[错误] 打开文件失败: %1").arg(filePath));
             continue;
         }
-        
+
         QJsonParseError parseError;
-        QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+        QJsonDocument doc =
+            QJsonDocument::fromJson(file.readAll(), &parseError);
         file.close();
 
         if (parseError.error != QJsonParseError::NoError) {
-            emit logMessage(QString::fromUtf8("[错误] JSON解析失败 %1: %2").arg(files.at(i)).arg(parseError.errorString()));
+            emit logMessage(QString::fromUtf8("[错误] JSON解析失败 %1: %2")
+                                .arg(files.at(i))
+                                .arg(parseError.errorString()));
             continue;
         }
         if (!doc.isObject()) {
-            emit logMessage(QString::fromUtf8("[错误] JSON根元素不是一个对象: %1").arg(files.at(i)));
+            emit logMessage(
+                QString::fromUtf8("[错误] JSON根元素不是一个对象: %1")
+                    .arg(files.at(i)));
             continue;
         }
 
@@ -111,8 +125,9 @@ void BackendWorker::performInitialSetup() {
                 p.pidFile = pidFileFromJson;
             }
         }
-        
-        if (p.type == "task" && obj.contains("schedule") && obj["schedule"].isObject()) {
+
+        if (p.type == "task" && obj.contains("schedule") &&
+            obj["schedule"].isObject()) {
             QJsonObject scheduleObj = obj["schedule"].toObject();
             p.schedule.type = scheduleObj["type"].toString();
             p.schedule.dayOfWeek = scheduleObj["dayOfWeek"].toInt(0);
@@ -132,7 +147,8 @@ void BackendWorker::performInitialSetup() {
     }
 
     // --- 3. 【核心修正】启动时清理过时的PID文件 ---
-    emit logMessage(QString::fromUtf8("后台线程：执行启动时PID文件健康检查..."));
+    emit logMessage(
+        QString::fromUtf8("后台线程：执行启动时PID文件健康检查..."));
     QList<QString> all_ids = m_processConfigs.keys();
     for (int i = 0; i < all_ids.count(); ++i) {
         QString id = all_ids.at(i);
@@ -148,19 +164,28 @@ void BackendWorker::performInitialSetup() {
         pidFile.close();
 
         if (pid <= 0) {
-            emit logMessage(QString::fromUtf8("[清理] 服务 %1 的PID文件内容无效，正在删除...").arg(id));
+            emit logMessage(QString::fromUtf8(
+                                "[清理] 服务 %1 的PID文件内容无效，正在删除...")
+                                .arg(id));
             pidFile.remove();
             continue;
         }
 
         if (::kill(pid, 0) != 0) {
-            emit logMessage(QString::fromUtf8("[清理] 检测到服务 %1 的过时PID文件 (PID: %2)，正在删除...").arg(id).arg(pid));
+            emit logMessage(
+                QString::fromUtf8(
+                    "[清理] 检测到服务 %1 的过时PID文件 (PID: %2)，正在删除...")
+                    .arg(id)
+                    .arg(pid));
             pidFile.remove();
         }
     }
-    
+
     // --- 4. 加载数据到UI并启动定时器 ---
-    emit logMessage(QString::fromUtf8("后台线程：所有配置文件解析完毕，共加载 %1 个服务/任务.").arg(m_processConfigs.count()));
+    emit logMessage(
+        QString::fromUtf8(
+            "后台线程：所有配置文件解析完毕，共加载 %1 个服务/任务.")
+            .arg(m_processConfigs.count()));
     emit processListLoaded(m_processConfigs.values());
 
     m_monitorTimer->start(2000);
@@ -595,4 +620,98 @@ QDateTime BackendWorker::calculateNextDueTime(
     }
 
     return QDateTime();
+}
+
+// core/backendworker.cpp
+
+void BackendWorker::onServiceAdded(const QString &newConfigPath) {
+    emit logMessage(QString::fromUtf8("后台线程：收到新服务添加请求: %1")
+                        .arg(newConfigPath));
+
+    QFile file(newConfigPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        emit logMessage(QString::fromUtf8("[错误] 无法读取新添加的配置文件: %1")
+                            .arg(newConfigPath));
+        return;
+    }
+
+    // --- 1. 读取并解析文件 ---
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+    file.close();
+
+    if (parseError.error != QJsonParseError::NoError) {
+        emit logMessage(
+            QString::fromUtf8("[错误] 解析新配置文件失败: %1, 错误: %2")
+                .arg(newConfigPath)
+                .arg(parseError.errorString()));
+        return;
+    }
+    if (!doc.isObject()) {
+        emit logMessage(
+            QString::fromUtf8("[错误] 新配置文件的根元素不是一个对象: %1")
+                .arg(newConfigPath));
+        return;
+    }
+
+    // --- 2. 填充ProcessInfo结构体 ---
+    QJsonObject obj = doc.object();
+    ProcessInfo p;
+
+    p.id = obj["id"].toString();
+    p.name = obj["name"].toString();
+    p.type = obj["type"].toString();
+    p.command = obj["command"].toString();
+    p.workingDir = obj["workingDir"].toString();
+    p.autoStart = obj["autoStart"].toBool(false);
+
+    if (obj.contains("args") && obj["args"].isArray()) {
+        QJsonArray argsArray = obj["args"].toArray();
+        for (int j = 0; j < argsArray.size(); ++j) {
+            p.args.append(argsArray[j].toString());
+        }
+    }
+
+    // 同样需要处理相对路径
+    QString pidFileFromJson = obj["pidFile"].toString();
+    if (!pidFileFromJson.isEmpty()) {
+        QFileInfo fileInfo(pidFileFromJson);
+        if (fileInfo.isRelative()) {
+            QString pidsPath = QCoreApplication::applicationDirPath() + "/pids";
+            QDir pidsDir(pidsPath);
+            p.pidFile = pidsDir.filePath(pidFileFromJson);
+        } else {
+            p.pidFile = pidFileFromJson;
+        }
+    }
+
+    if (p.type == "task" && obj.contains("schedule") &&
+        obj["schedule"].isObject()) {
+        QJsonObject scheduleObj = obj["schedule"].toObject();
+        p.schedule.type = scheduleObj["type"].toString();
+        p.schedule.dayOfWeek = scheduleObj["dayOfWeek"].toInt(0);
+        p.schedule.dayOfMonth = scheduleObj["dayOfMonth"].toInt(0);
+        p.schedule.hour = scheduleObj["hour"].toInt(-1);
+        p.schedule.minute = scheduleObj["minute"].toInt(-1);
+    }
+
+    if (obj.contains("healthCheck") && obj["healthCheck"].isObject()) {
+        QJsonObject healthCheckObj = obj["healthCheck"].toObject();
+        p.healthCheckEnabled = healthCheckObj["enabled"].toBool(false);
+        p.maxCpu = healthCheckObj["maxCpu"].toDouble(0.0);
+        p.maxMem = healthCheckObj["maxMem"].toDouble(0.0);
+    }
+
+    // --- 3. 更新内部状态并通知UI ---
+    if (p.id.isEmpty()) {
+        emit logMessage(
+            QString::fromUtf8("[错误] 新配置文件缺少必须的'id'字段。"));
+        return;
+    }
+
+    // 将解析出的新服务信息添加到内存中的配置列表
+    m_processConfigs[p.id] = p;
+
+    // 发射信号，通知ProcessModel去UI上插入新的一行
+    emit processInfoAdded(p);
 }

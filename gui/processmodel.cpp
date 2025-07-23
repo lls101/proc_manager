@@ -84,7 +84,7 @@ QVariant ProcessModel::headerData(int section, Qt::Orientation orientation,
 }
 
 void ProcessModel::updateProcessStatus(const QString &id, const QString &status,
-                                        qint64 pid, double cpu, double mem) {
+                                       qint64 pid, double cpu, double mem) {
     // 【关键修复4】添加调试信息，确认数据更新是否到达
     qDebug() << "ProcessModel::updateProcessStatus called - ID:" << id
              << "Status:" << status << "PID:" << pid << "CPU:" << cpu
@@ -127,4 +127,14 @@ void ProcessModel::updateProcessStatus(const QString &id, const QString &status,
 
     // 【关键修复6】如果没有找到对应的进程，输出警告
     qDebug() << "Warning: Process with ID" << id << "not found in model";
+}
+
+void ProcessModel::addProcess(const ProcessInfo &info) {
+    // beginInsertRows/endInsertRows 是Qt Model/View编程的最佳实践
+    // 它会高效地通知视图“准备插入新行了”，而不是刷新整个表格
+    beginInsertRows(QModelIndex(), rowCount(), rowCount());
+
+    m_processes.append(info);
+
+    endInsertRows();
 }
