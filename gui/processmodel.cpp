@@ -84,7 +84,7 @@ QVariant ProcessModel::headerData(int section, Qt::Orientation orientation,
 }
 
 void ProcessModel::updateProcessStatus(const QString &id, const QString &status,
-                                       long pid, double cpu, double mem) {
+                                        qint64 pid, double cpu, double mem) {
     // 【关键修复4】添加调试信息，确认数据更新是否到达
     qDebug() << "ProcessModel::updateProcessStatus called - ID:" << id
              << "Status:" << status << "PID:" << pid << "CPU:" << cpu

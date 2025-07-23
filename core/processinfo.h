@@ -34,7 +34,7 @@ struct ProcessInfo {
 
     // 由后端实时更新的动态信息
     QString status;  // 状态: "Running", "Stopped", "Error", "Starting..." etc.
-    long pid;        // 进程ID (-1 if not running)
+    qint64  pid;        // 进程ID (-1 if not running)
     double cpuUsage;  // CPU使用率 (%)
     double memUsage;  // 内存使用量 (MB)
 

@@ -24,8 +24,7 @@ public slots:
     void updateProcessList(const QList<ProcessInfo> &processes);
 
     // 修改槽，使其能接收cpu和mem数据
-    void updateProcessStatus(const QString &id, const QString &status, long pid,
-                             double cpu, double mem);
+     void updateProcessStatus(const QString &id, const QString &status, qint64 pid, double cpu, double mem);
 
 private:
     QList<ProcessInfo> m_processes;

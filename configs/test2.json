@@ -14,6 +14,6 @@
     "healthCheck": {
         "enabled": true,
         "maxCpu": 80.0,
-        "maxMem": 80.0
+        "maxMem": 40.0
     }
 }

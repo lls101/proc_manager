@@ -5,14 +5,10 @@
 #include <QList>
 #include <QMap>
 #include <QObject>
-#include <QProcess>
 #include <QString>
 #include <QStringList>
 
 #include "processinfo.h"
-
-class QProcess;
-class QTimer;
 
 class BackendWorker : public QObject {
     Q_OBJECT
@@ -22,57 +18,56 @@ public:
     ~BackendWorker();
 
 signals:
+    // --- UI通信信号 ---
     void logMessage(const QString &message);
     void processListLoaded(const QList<ProcessInfo> &processes);
-    // 1. 修改信号，增加cpu和mem参数
     void processStatusChanged(const QString &id, const QString &status,
-                              long pid, double cpu, double mem);
-    // 2. 新增信号，用于汇报系统全局资源
+                              qint64 pid, double cpu, double mem);
     void systemMetricsUpdated(double cpuPercent, double memPercent);
 
+    // --- 内部逻辑信号，用于延迟重启 ---
+    void delayedStartSignal();
+
 public slots:
+    // --- 由主线程调用的核心槽函数 ---
     void performInitialSetup();
     void startProcess(const QString &id);
     void stopProcess(const QString &id);
     void restartProcess(const QString &id);
 
 private slots:
-    void onProcessStarted();
-    void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
-    void onProcessError(QProcess::ProcessError error);
-    void onGracefulShutdownTimeout();
-    // 3. 新增槽，由定时器触发，作为监控循环的入口
+    // --- 定时器触发的槽函数 ---
     void onMonitorTimeout();
-
-    void startProcessFromQueue();
-
     void onSchedulerTick();
 
-private:
-    QMap<QString, ProcessInfo> m_processConfigs;
-    QMap<QString, QProcess *> m_runningProcesses;
-    QMap<QString, QTimer *> m_shutdownTimers;
-    QStringList m_restartQueue;
-    // 4. 新增监控循环的定时器
-    QTimer *m_monitorTimer;
-    QString m_lastToStart;
+    // --- 优雅关闭和延迟重启的辅助槽函数 ---
+    void onGracefulShutdownTimeout();
+    void onDelayedStart();
 
-    // 5. 新增用于计算CPU使用率的辅助成员变量
-    // 系统级
+private:
+    // --- 核心数据和定时器 ---
+    QMap<QString, ProcessInfo> m_processConfigs;
+    QTimer *m_monitorTimer;
+    QTimer *m_schedulerTimer;
+    QDateTime m_lastSchedulerCheckTime;
+
+    // --- CPU计算辅助成员 ---
     unsigned long long m_prevSystemWorkTime;
     unsigned long long m_prevSystemTotalTime;
-    // 进程级 (key是进程ID)
     QMap<QString, unsigned long long> m_prevProcessTime;
 
-    // 用于记录每个进程连续超出阈值的次数
+    // --- 健康检查辅助成员 ---
     QMap<QString, int> m_breachCounters;
 
-    QTimer *m_schedulerTimer;            // 调度器“心跳”定时器
-    QDateTime m_lastSchedulerCheckTime;  // 上次检查调度的时间
+    // --- 优雅关闭辅助成员 ---
+    QMap<qint64, QString> m_shutdownPidToIdMap;
+
+    // --- 延迟重启辅助成员 ---
+    QString m_lastToStartForRestart;
+
+    // --- 私有辅助函数 ---
     QDateTime calculateNextDueTime(const ProcessInfo::Schedule &schedule,
                                    const QDateTime &after);
-
-    QMap<qint64, QString> m_shutdownPidToIdMap;
 };
 
 #endif  // BACKENDWORKER_H

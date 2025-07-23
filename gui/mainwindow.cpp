@@ -56,11 +56,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(this, SIGNAL(stopProcessRequested(QString)), m_backendWorker,
             SLOT(stopProcess(QString)));
 
-    connect(
-        m_backendWorker,
-        SIGNAL(processStatusChanged(QString, QString, long, double, double)),
-        m_processModel,
-        SLOT(updateProcessStatus(QString, QString, long, double, double)));
+    connect(m_backendWorker, SIGNAL(processStatusChanged(QString,QString,qint64,double,double)),
+        m_processModel, SLOT(updateProcessStatus(QString,QString,qint64,double,double)));
 
     // 【关键修复2】系统指标更新连接
     connect(m_backendWorker, SIGNAL(systemMetricsUpdated(double, double)), this,
