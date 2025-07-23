@@ -1,6 +1,7 @@
 #ifndef BACKENDWORKER_H
 #define BACKENDWORKER_H
 
+#include <QDateTime>
 #include <QList>
 #include <QMap>
 #include <QObject>
@@ -45,6 +46,8 @@ private slots:
 
     void startProcessFromQueue();
 
+    void onSchedulerTick();
+
 private:
     QMap<QString, ProcessInfo> m_processConfigs;
     QMap<QString, QProcess *> m_runningProcesses;
@@ -60,6 +63,14 @@ private:
     unsigned long long m_prevSystemTotalTime;
     // 进程级 (key是进程ID)
     QMap<QString, unsigned long long> m_prevProcessTime;
+
+    // 用于记录每个进程连续超出阈值的次数
+    QMap<QString, int> m_breachCounters;
+
+    QTimer *m_schedulerTimer;            // 调度器“心跳”定时器
+    QDateTime m_lastSchedulerCheckTime;  // 上次检查调度的时间
+    QDateTime calculateNextDueTime(const ProcessInfo::Schedule &schedule,
+                                   const QDateTime &after);
 };
 
 #endif  // BACKENDWORKER_H

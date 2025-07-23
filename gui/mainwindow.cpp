@@ -56,8 +56,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(this, SIGNAL(stopProcessRequested(QString)), m_backendWorker,
             SLOT(stopProcess(QString)));
 
-    // 【关键修复1】只保留一个processStatusChanged连接，使用完整的5参数版本
-    // 移除了之前的3参数版本连接，避免信号槽冲突
     connect(
         m_backendWorker,
         SIGNAL(processStatusChanged(QString, QString, long, double, double)),
@@ -90,6 +88,17 @@ void MainWindow::onLogMessageReceived(const QString &message) {
 void MainWindow::onInitialSetupCompleted() {
     // This slot is currently unused
 }
+
+// void MainWindow::onSelectionChangedTest() {
+//    QModelIndexList selectedIndexes =
+//        ui->tableView->selectionModel()->selectedIndexes();
+
+//    if (selectedIndexes.isEmpty()) {
+//        ui->btnStart->setEnabled(false);
+//        ui->btnStop->setEnabled(false);
+//        ui->btn
+//    }
+//}
 
 void MainWindow::onSelectionChanged() {
     QModelIndexList selectedIndexes =

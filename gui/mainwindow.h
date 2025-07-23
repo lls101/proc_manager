@@ -33,7 +33,7 @@ private slots:
     void on_btnStop_clicked();
 
     void on_btnRestart_clicked();
-    // 新增槽，用于更新系统状态的UI控件
+    //用于更新系统状态的UI控件
     void onSystemMetricsUpdated(double cpuPercent, double memPercent);
 
 private:

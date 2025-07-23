@@ -20,6 +20,11 @@ BackendWorker::BackendWorker(QObject *parent) : QObject(parent) {
     // 创建监控定时器
     m_monitorTimer = new QTimer(this);
     connect(m_monitorTimer, SIGNAL(timeout()), this, SLOT(onMonitorTimeout()));
+
+    // 【新增：创建调度器定时器】
+    m_schedulerTimer = new QTimer(this);
+    // 我们让它每20秒检查一次，以确保不会错过分钟级的任务
+    connect(m_schedulerTimer, SIGNAL(timeout()), this, SLOT(onSchedulerTick()));
 }
 
 BackendWorker::~BackendWorker() {
@@ -91,6 +96,23 @@ void BackendWorker::performInitialSetup() {
         p.workingDir = obj["workingDir"].toString();
         p.autoStart = obj["autoStart"].toBool();
 
+        if (p.type == "task" && obj.contains("schedule") &&
+            obj["schedule"].isObject()) {
+            QJsonObject scheduleObj = obj["schedule"].toObject();
+            p.schedule.type = scheduleObj["type"].toString();
+            p.schedule.dayOfWeek = scheduleObj["dayOfWeek"].toInt(0);
+            p.schedule.dayOfMonth = scheduleObj["dayOfMonth"].toInt(0);
+            p.schedule.hour = scheduleObj["hour"].toInt(-1);
+            p.schedule.minute = scheduleObj["minute"].toInt(-1);
+        }
+
+        if (obj.contains("healthCheck") && obj["healthCheck"].isObject()) {
+            QJsonObject healthCheckObj = obj["healthCheck"].toObject();
+            p.healthCheckEnabled = healthCheckObj["enabled"].toBool(false);
+            p.maxCpu = healthCheckObj["maxCpu"].toDouble(0.0);
+            p.maxMem = healthCheckObj["maxMem"].toDouble(0.0);
+        }
+
         m_processConfigs[p.id] = p;
     }
 
@@ -103,6 +125,10 @@ void BackendWorker::performInitialSetup() {
     // 启动监控，每2秒触发一次
     m_monitorTimer->start(2000);
     emit logMessage(QString::fromUtf8("后台线程：资源监控循环已启动。"));
+
+    m_lastSchedulerCheckTime = QDateTime::currentDateTime();
+    m_schedulerTimer->start(20000);  // 每20秒检查一次
+    emit logMessage(QString::fromUtf8("后台线程：计划任务调度器已启动。"));
 }
 
 // ==================== 最终的、可工作的 onMonitorTimeout 函数
@@ -222,6 +248,54 @@ void BackendWorker::onMonitorTimeout() {
         }
         emit processStatusChanged(id, "Running", pid, processCpuUsage,
                                   processMemUsage);
+
+        ProcessInfo config = m_processConfigs.value(id);
+        if (config.healthCheckEnabled) {
+            bool isBreached = false;
+            QString breachReason;
+
+            if (config.maxCpu > 0 && processCpuUsage > config.maxCpu) {
+                isBreached = true;
+                breachReason = QString::fromUtf8("CPU占用超标 (%1% > %2%)")
+                                   .arg(processCpuUsage, 0, 'f', 1)
+                                   .arg(config.maxCpu, 0, 'f', 1);
+            } else if (config.maxMem > 0 && processMemUsage > config.maxMem) {
+                isBreached = true;
+                breachReason = QString::fromUtf8("内存占用超标 (%1MB > %2MB)")
+                                   .arg(processMemUsage, 0, 'f', 1)
+                                   .arg(config.maxMem, 0, 'f', 1);
+            }
+
+            if (isBreached) {
+                // 如果超标，增加计数器
+                int count = m_breachCounters.value(id, 0) + 1;
+                m_breachCounters[id] = count;
+                emit logMessage(
+                    QString::fromUtf8(
+                        "[警告] 服务 %1 健康检查异常: %2 (连续第 %3 次)")
+                        .arg(id)
+                        .arg(breachReason)
+                        .arg(count));
+
+                // 连续3次超标，触发自愈
+                if (count >= 3) {
+                    emit logMessage(
+                        QString::fromUtf8(
+                            "[自愈] 服务 %1 连续3次资源超标，触发自动重启！")
+                            .arg(id));
+                    restartProcess(id);
+                    m_breachCounters.remove(id);  // 重启后计数器清零
+                }
+            } else {
+                // 如果本次未超标，则清零计数器
+                if (m_breachCounters.contains(id)) {
+                    emit logMessage(
+                        QString::fromUtf8("[信息] 服务 %1 健康状态已恢复。")
+                            .arg(id));
+                    m_breachCounters.remove(id);
+                }
+            }
+        }
     }
 
     // --- 3. 为下一次监控循环，更新系统时间基准值 ---
@@ -356,6 +430,8 @@ void BackendWorker::onProcessFinished(int exitCode,
     QString id = m_runningProcesses.key(process);
     if (id.isEmpty()) return;
 
+    m_breachCounters.remove(id);
+
     if (m_shutdownTimers.contains(id)) {
         emit logMessage(QString::fromUtf8("服务 %1 已成功优雅退出。").arg(id));
         QTimer *timer = m_shutdownTimers.value(id);
@@ -408,6 +484,8 @@ void BackendWorker::onProcessError(QProcess::ProcessError error) {
     QString id = m_runningProcesses.key(process);
     if (id.isEmpty()) return;
 
+    m_breachCounters.remove(id);
+
     m_prevProcessTime.remove(id);
     emit logMessage(QString::fromUtf8("[严重错误] 服务 %1 启动失败: %2")
                         .arg(id)
@@ -450,4 +528,99 @@ void BackendWorker::restartProcess(const QString &id) {
 
     // 2. 调用现有的停止流程
     stopProcess(id);
+}
+
+void BackendWorker::onSchedulerTick() {
+    QDateTime now = QDateTime::currentDateTime();
+
+    // C++98迭代方式
+    for (QMap<QString, ProcessInfo>::iterator it = m_processConfigs.begin();
+         it != m_processConfigs.end(); ++it) {
+        const ProcessInfo &task = it.value();
+
+        // 只处理类型为"task"且未在运行中的任务
+        if (task.type != "task" || m_runningProcesses.contains(task.id)) {
+            continue;
+        }
+
+        // 计算这个任务下一次应该执行的时间点
+        QDateTime nextDueTime =
+            calculateNextDueTime(task.schedule, m_lastSchedulerCheckTime);
+
+        // 如果应执行时间点落在(上次检查时间, 现在时间]这个区间内，就执行它
+        if (!nextDueTime.isNull() && nextDueTime > m_lastSchedulerCheckTime &&
+            nextDueTime <= now) {
+            emit logMessage(QString::fromUtf8(
+                                "[调度器] 任务 '%1' 已到执行时间，正在启动...")
+                                .arg(task.name));
+            startProcess(task.id);
+        }
+    }
+
+    // 更新上次检查时间
+    m_lastSchedulerCheckTime = now;
+}
+
+// 【新增：计算下次执行时间的辅助函数】
+QDateTime BackendWorker::calculateNextDueTime(
+    const ProcessInfo::Schedule &schedule, const QDateTime &after) {
+    if (schedule.hour < 0 || schedule.minute < 0) {
+        return QDateTime();  // 无效的调度计划
+    }
+
+    QDateTime next = after;
+    QDate nextDate = after.date();
+    QTime nextTime(schedule.hour, schedule.minute);
+
+    next.setTime(nextTime);
+
+    if (schedule.type == "daily") {
+        if (next <= after) {
+            next = next.addDays(1);
+        }
+        return next;
+    } else if (schedule.type == "weekly") {
+        if (schedule.dayOfWeek < 1 || schedule.dayOfWeek > 7)
+            return QDateTime();
+
+        // 先将日期调整到正确的星期
+        int daysToAdd = schedule.dayOfWeek - nextDate.dayOfWeek();
+        if (daysToAdd < 0) {
+            daysToAdd += 7;
+        }
+        next = next.addDays(daysToAdd);
+
+        // 如果调整后的时间点已经过去，则推到下周
+        if (next <= after) {
+            next = next.addDays(7);
+        }
+        return next;
+    } else if (schedule.type == "monthly") {
+        if (schedule.dayOfMonth < 1) return QDateTime();
+
+        // 循环查找下一个包含调度日的有效月份
+        for (int i = 0; i < 12; ++i) {  // 最多找12个月
+            // 如果调度日大于当前月的总天数，则跳到下个月
+            if (schedule.dayOfMonth > nextDate.daysInMonth()) {
+                nextDate = nextDate.addMonths(1);
+                nextDate.setDate(nextDate.year(), nextDate.month(),
+                                 1);  // 移到1号以防月份跳跃
+                continue;
+            }
+
+            nextDate.setDate(nextDate.year(), nextDate.month(),
+                             schedule.dayOfMonth);
+            next.setDate(nextDate);
+
+            if (next > after) {
+                return next;  // 找到了未来的第一个执行点
+            }
+
+            // 如果时间点已过，则从下个月1号开始重新计算
+            nextDate = after.date().addMonths(1);
+            nextDate.setDate(nextDate.year(), nextDate.month(), 1);
+        }
+    }
+
+    return QDateTime();  // 找不到或无效
 }
