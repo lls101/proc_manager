@@ -39,6 +39,21 @@ MainWindow::MainWindow(QWidget *parent)
     m_backendWorker = new BackendWorker();
     m_backendWorker->moveToThread(m_workerThread);
 
+    //为主界面设置图标（来自阿里巴巴矢量图库）
+    ui->btnAdd->setIcon(QIcon(":/icons/tianjia.svg"));
+    ui->btnEdit->setIcon(QIcon(":/icons/bianji.svg"));
+    ui->btnDelete->setIcon(QIcon(":/icons/shanchu.svg"));
+    ui->btnStart->setIcon(QIcon(":/icons/qidong.svg"));
+    ui->btnStop->setIcon(QIcon(":/icons/tingzhi.svg"));
+    ui->btnRestart->setIcon(QIcon(":/icons/zhongqi.svg"));
+
+    ui->btnAdd->setIconSize(QSize(16, 16));
+    ui->btnEdit->setIconSize(QSize(16, 16));
+    ui->btnDelete->setIconSize(QSize(16, 16));
+    ui->btnStart->setIconSize(QSize(16, 16));
+    ui->btnStop->setIconSize(QSize(16, 16));
+    ui->btnRestart->setIconSize(QSize(16, 16));
+
     // --- Signal/Slot Connections ---
     connect(m_backendWorker, SIGNAL(logMessage(QString)), this,
             SLOT(onLogMessageReceived(QString)));

@@ -60,7 +60,7 @@
         <item>
          <widget class="QPushButton" name="btnAdd">
           <property name="text">
-           <string>✚ 添加服务</string>
+           <string>添加服务</string>
           </property>
          </widget>
         </item>
@@ -70,7 +70,7 @@
            <bool>false</bool>
           </property>
           <property name="text">
-           <string>✏️ 编辑</string>
+           <string>编辑</string>
           </property>
          </widget>
         </item>
@@ -80,7 +80,7 @@
            <bool>false</bool>
           </property>
           <property name="text">
-           <string>🗑️ 删除</string>
+           <string>删除</string>
           </property>
          </widget>
         </item>
@@ -90,7 +90,7 @@
            <bool>false</bool>
           </property>
           <property name="text">
-           <string>▶ 启动</string>
+           <string>启动</string>
           </property>
          </widget>
         </item>
@@ -100,7 +100,7 @@
            <bool>false</bool>
           </property>
           <property name="text">
-           <string>■ 停止</string>
+           <string>停止</string>
           </property>
          </widget>
         </item>
@@ -110,7 +110,7 @@
            <bool>false</bool>
           </property>
           <property name="text">
-           <string>↻ 重启</string>
+           <string>重启</string>
           </property>
          </widget>
         </item>

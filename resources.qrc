@@ -1,0 +1,16 @@
+<RCC>
+    <qresource prefix="/">
+        <file>stylesheet.qss</file>
+        <file>icons/bianji.svg</file>
+        <file>icons/qidong.svg</file>
+        <file>icons/shanchu.svg</file>
+        <file>icons/shanchu_1.svg</file>
+        <file>icons/start.svg</file>
+        <file>icons/tianjia.svg</file>
+        <file>icons/tianjia_1.svg</file>
+        <file>icons/tingzhi.svg</file>
+        <file>icons/zhongqi.svg</file>
+        <file>icons/zhongqi_1.svg</file>
+        <file>icons/ziyuanxhdpi.svg</file>
+    </qresource>
+</RCC>

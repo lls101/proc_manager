@@ -9,7 +9,7 @@ AddServiceDialog::AddServiceDialog(QWidget *parent)
     : QDialog(parent), ui(new Ui::AddServiceDialog) {
     ui->setupUi(this);
 
-    // --- 初始化下拉框 (专业的写法) ---
+    // 
     // 服务类型
     ui->comboType->addItem("常驻服务 (service)", "service");
     ui->comboType->addItem("计划任务 (task)", "task");
@@ -35,12 +35,15 @@ AddServiceDialog::AddServiceDialog(QWidget *parent)
     connect(ui->btnBrowseDir, SIGNAL(clicked()), this,
             SLOT(onBrowseWorkingDir()));
 
-    // 连接OK按钮到我们自定义的accept槽
+    // 连接OK按钮到自定义的accept槽
     connect(ui->buttonBox, SIGNAL(accepted()), this, SLOT(accept()));
     // Cancel按钮默认就会调用reject()，无需手动连接
 
     // --- 初始化UI状态 ---
     updateGroupBoxesState();
+
+    //自动调整窗口大小
+    adjustSize();
 }
 
 AddServiceDialog::~AddServiceDialog() {

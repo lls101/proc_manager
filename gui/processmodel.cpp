@@ -51,10 +51,26 @@ QVariant ProcessModel::data(const QModelIndex &index, int role) const {
             default:
                 return QVariant();
         }
-    } else if (role == Qt::ForegroundRole && index.column() == 3) {
-        if (p.status == "Running") return QColor(Qt::green);
-        if (p.status == "Stopped") return QColor(Qt::yellow);
-        if (p.status == "Error") return QColor(Qt::red);
+    }  else if (role == Qt::ForegroundRole) 
+    {
+        
+        if (index.column() == 1) {
+            if (p.type == "service") {
+                // 常驻服务 - 使用一种专业的蓝色
+                return QColor("#3498DB");
+            }
+            if (p.type == "task") {
+                // 计划任务 - 使用一种独特的紫色
+                return QColor("#9B59B6");
+            }
+        }
+
+        // 【您已实现的逻辑】为“状态”列（第3列）设置颜色
+        if (index.column() == 3) {
+            if (p.status == "Running") return QColor(46, 204, 113);   // 绿色
+            if (p.status == "Stopped") return QColor(230, 126, 34);  // 琥珀色
+            if (p.status == "Error") return QColor(231, 76, 60);   // 红色 (Qt::red 过于刺眼，用一个柔和些的)
+        }
     }
 
     return QVariant();

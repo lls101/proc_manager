@@ -1,0 +1,162 @@
+/* stylesheet.qss - WCAG 2.1 Compliant Light Theme */
+
+/* === 全局样式 === */
+QWidget {
+    background-color: #F5F7FA;
+    color: #2c3e50;
+    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+    font-size: 14px;
+    /* 为输入框等设置统一的选中色 */
+    selection-background-color: #409EFF;
+    selection-color: #FFFFFF;
+}
+
+/* === 主窗口与通用容器 === */
+QMainWindow, QGroupBox {
+    background-color: #F5F7FA;
+}
+
+/* === 进度条 QProgressBar === */
+QProgressBar {
+    border: 1px solid #DCDFE6;
+    border-radius: 4px;
+    text-align: center;
+    background-color: #EBEEF5;
+    color: #2c3e50;
+}
+QProgressBar::chunk {
+    background-color: #409EFF;
+    border-radius: 3px;
+    margin: 1px;
+}
+
+/* === 表格 QTableView === */
+QTableView {
+    border: 1px solid #DCDFE6;
+    gridline-color: #EBEEF5; /* 使用更柔和的网格线 */
+    background-color: #FFFFFF;
+}
+/* 表头 */
+QHeaderView::section {
+    background-color: #F5F7FA;
+    padding: 6px;
+    border: none;
+    border-bottom: 1px solid #DCDFE6;
+    color: #909399; /* 表头文字颜色稍浅 */
+    font-weight: bold;
+}
+/* 选中行 */
+QTableView::item:selected {
+    background-color: #409EFF;
+    color: #FFFFFF;
+}
+/* 鼠标悬浮行 */
+QTableView::item:hover {
+    background-color: #ECF5FF;
+}
+
+/* === 日志区域 QPlainTextEdit === */
+QPlainTextEdit {
+    background-color: #FFFFFF;
+    border: 1px solid #DCDFE6;
+    border-radius: 4px;
+    color: #303133;
+    font-family: Consolas, Monaco, monospace;
+}
+
+/* === 按钮 QPushButton === */
+QPushButton {
+    background-color: #FFFFFF;
+    border: 1px solid #DCDFE6;
+    padding: 8px 16px;
+    border-radius: 4px;
+    color: #606266;
+    font-weight: 500;
+}
+QPushButton:hover {
+    background-color: #ECF5FF;
+    color: #409EFF;
+    border-color: #c6e2ff;
+}
+QPushButton:pressed {
+    background-color: #409EFF;
+    color: #FFFFFF;
+    border-color: #409EFF;
+}
+QPushButton:disabled {
+    background-color: #F5F7FA;
+    color: #C0C4CC;
+    border-color: #EBEEF5;
+}
+
+/* 主操作按钮（例如“添加服务”）的特殊样式 */
+QPushButton#btnAdd { /* 注意这里我们用了对象名选择器 */
+    background-color: #409EFF;
+    color: #FFFFFF;
+    border-color: #409EFF;
+}
+QPushButton#btnAdd:hover {
+    background-color: #66b1ff;
+    border-color: #66b1ff;
+}
+QPushButton#btnAdd:pressed {
+    background-color: #3a8ee6;
+    border-color: #3a8ee6;
+}
+
+/* 【重要】WCAG要求：键盘焦点必须清晰可见 */
+QPushButton:focus, QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QTableView:focus {
+    border: 1px solid #409EFF; /* 使用主色调作为焦点边框 */
+}
+
+/* === 其他输入控件 === */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background-color: #FFFFFF;
+    border: 1px solid #DCDFE6;
+    border-radius: 4px;
+    padding: 6px;
+}
+QComboBox::drop-down {
+    border: none;
+}
+QComboBox::down-arrow {
+    image: url(:/icons/chevron-down.svg); /* 示例：可以为下拉箭头指定一个图标 */
+}
+
+/* === 滚动条 === */
+QScrollBar:vertical {
+    border: none;
+    background: #F5F7FA;
+    width: 10px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:vertical {
+    background: #DCDFE6;
+    min-height: 20px;
+    border-radius: 5px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #C0C4CC;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+/* === 【核心修正】统一所有控件的禁用状态样式 === */
+
+/* 禁用的分组框标题和复选框 */
+QGroupBox::title:disabled, QGroupBox::indicator:disabled {
+    color: #C0C4CC; /* 使用清晰的浅灰色 */
+}
+
+/* 禁用的标签 */
+QLabel:disabled {
+    color: #A8ABB2; /* 比分组框标题稍深一点，以示区分 */
+}
+
+/* 禁用的输入框、下拉框、数字选择框 */
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
+    background-color: #F5F7FA; /* 与主背景色相同 */
+    color: #A8ABB2;
+    border-color: #E4E7ED; /* 使用更浅的边框 */
+}
