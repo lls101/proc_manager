@@ -86,6 +86,49 @@ ProcessInfo AddServiceDialog::getServiceInfo() const {
     return info;
 }
 
+void AddServiceDialog::setServiceInfo(const ProcessInfo &info) {
+    // --- 填充基础信息 ---
+    ui->lineEditId->setText(info.id);
+    ui->lineEditId->setEnabled(false);  // ID是唯一标识，编辑时不允许修改
+    ui->lineEditName->setText(info.name);
+    ui->lineEditCommand->setText(info.command);
+    ui->lineEditArgs->setText(
+        info.args.join(" "));  // 将参数列表合并为空格分隔的字符串
+    ui->lineEditWorkingDir->setText(info.workingDir);
+    ui->lineEditPidFile->setText(info.pidFile);
+    ui->checkAutoStart->setChecked(info.autoStart);
+
+    // --- 填充服务类型 ---
+    int typeIndex = ui->comboType->findData(info.type);
+    if (typeIndex != -1) {
+        ui->comboType->setCurrentIndex(typeIndex);
+    }
+
+    // --- 填充计划任务 ---
+    if (info.type == "task") {
+        ui->groupSchedule->setChecked(true);
+        int scheduleTypeIndex =
+            ui->comboScheduleType->findData(info.schedule.type);
+        if (scheduleTypeIndex != -1) {
+            ui->comboScheduleType->setCurrentIndex(scheduleTypeIndex);
+        }
+        ui->spinDayOfWeek->setValue(info.schedule.dayOfWeek);
+        ui->spinDayOfMonth->setValue(info.schedule.dayOfMonth);
+        ui->spinHour->setValue(info.schedule.hour);
+        ui->spinMinute->setValue(info.schedule.minute);
+    }
+
+    // --- 填充健康检查 ---
+    ui->groupHealthCheck->setChecked(info.healthCheckEnabled);
+    if (info.healthCheckEnabled) {
+        ui->spinMaxCpu->setValue(info.maxCpu);
+        ui->spinMaxMem->setValue(info.maxMem);
+    }
+
+    // 手动调用一次，确保所有控件的启用/禁用状态和可见性正确
+    updateGroupBoxesState();
+}
+
 // 当用户点击OK时，先验证，再接受
 void AddServiceDialog::accept() {
     // 数据验证

@@ -1,0 +1,19 @@
+{
+    "args": [
+        "/root/workspace/scripts/test.sh"
+    ],
+    "autoStart": false,
+    "command": "/usr/bin/bash",
+    "id": "aaa",
+    "name": "aaaa",
+    "pidFile": "aaa.pid",
+    "schedule": {
+        "dayOfMonth": 0,
+        "dayOfWeek": 0,
+        "hour": 10,
+        "minute": 11,
+        "type": "daily"
+    },
+    "type": "task",
+    "workingDir": "/root/workspace/tmp"
+}

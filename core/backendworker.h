@@ -30,6 +30,12 @@ signals:
 
     void processInfoAdded(const ProcessInfo &info);
 
+    void serviceDeleted(const QString &id);
+
+    void serviceInfoReadyForEdit(const ProcessInfo &info);
+
+    void serviceInfoUpdated(const ProcessInfo &info);
+
 public slots:
     // --- 由主线程调用的核心槽函数 ---
     void performInitialSetup();
@@ -38,6 +44,12 @@ public slots:
     void restartProcess(const QString &id);
 
     void onServiceAdded(const QString &newConfigPath);
+
+    void onDeleteServiceRequested(const QString &id);
+
+    void onEditServiceRequested(const QString &id);
+
+    void onServiceEdited(const QString &configPath);
 
 private slots:
     // --- 定时器触发的槽函数 ---
@@ -59,6 +71,8 @@ private:
     unsigned long long m_prevSystemWorkTime;
     unsigned long long m_prevSystemTotalTime;
     QMap<QString, unsigned long long> m_prevProcessTime;
+
+    QStringList m_restartQueue;
 
     // --- 健康检查辅助成员 ---
     QMap<QString, int> m_breachCounters;

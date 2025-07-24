@@ -22,6 +22,8 @@ class AddServiceDialog : public QDialog {
     // 主窗口可以调用此函数来获取用户配置好的所有数据。
     ProcessInfo getServiceInfo() const;
 
+    void setServiceInfo(const ProcessInfo &info);
+
 private slots:
     // --- 自动响应UI变化的槽函数 ---
 

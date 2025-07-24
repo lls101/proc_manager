@@ -29,6 +29,10 @@ public slots:
 
     void addProcess(const ProcessInfo &info);
 
+    void onServiceDeleted(const QString &id);
+
+    void onServiceUpdated(const ProcessInfo &info);
+
 private:
     QList<ProcessInfo> m_processes;
 };

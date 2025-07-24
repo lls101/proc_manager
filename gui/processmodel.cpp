@@ -138,3 +138,46 @@ void ProcessModel::addProcess(const ProcessInfo &info) {
 
     endInsertRows();
 }
+
+void ProcessModel::onServiceDeleted(const QString &id) {
+    // 1. 遍历查找要删除的服务在列表中的行号
+    int rowToRemove = -1;
+    for (int i = 0; i < m_processes.count(); ++i) {
+        if (m_processes.at(i).id == id) {
+            rowToRemove = i;
+            break;
+        }
+    }
+
+    if (rowToRemove != -1) {
+        // 2. 使用beginRemoveRows/endRemoveRows通知视图准备移除操作
+        // 这是最高效、最正确的刷新方式
+        beginRemoveRows(QModelIndex(), rowToRemove, rowToRemove);
+        m_processes.removeAt(rowToRemove);
+        endRemoveRows();
+    }
+}
+
+// gui/processmodel.cpp
+
+void ProcessModel::onServiceUpdated(const ProcessInfo &info) {
+    // 1. 遍历查找要更新的服务在列表中的行号
+    int rowToUpdate = -1;
+    for (int i = 0; i < m_processes.count(); ++i) {
+        if (m_processes.at(i).id == info.id) {
+            rowToUpdate = i;
+            break;
+        }
+    }
+
+    if (rowToUpdate != -1) {
+        // 2. 直接替换掉旧的数据
+        m_processes[rowToUpdate] = info;
+
+        // 3. 发射 dataChanged 信号，通知视图刷新这一整行的数据
+        // 这是最高效的单行刷新方式
+        QModelIndex topLeft = index(rowToUpdate, 0);
+        QModelIndex bottomRight = index(rowToUpdate, columnCount() - 1);
+        emit dataChanged(topLeft, bottomRight);
+    }
+}

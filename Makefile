@@ -53,16 +53,20 @@ OBJECTS_DIR   = ./
 ####### Files
 
 SOURCES       = main.cpp \
+		gui/addservicedialog.cpp \
 		gui/mainwindow.cpp \
 		gui/processmodel.cpp \
 		core/backendworker.cpp moc_mainwindow.cpp \
+		moc_addservicedialog.cpp \
 		moc_processmodel.cpp \
 		moc_backendworker.cpp
 OBJECTS       = main.o \
+		addservicedialog.o \
 		mainwindow.o \
 		processmodel.o \
 		backendworker.o \
 		moc_mainwindow.o \
+		moc_addservicedialog.o \
 		moc_processmodel.o \
 		moc_backendworker.o
 DIST          = /usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/spec_pre.prf \
@@ -141,9 +145,11 @@ DIST          = /usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/spec_pre.prf \
 		/usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/yacc.prf \
 		/usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/lex.prf \
 		ProcessManager.pro gui/mainwindow.h \
+		gui/addservicedialog.h \
 		gui/processmodel.h \
 		core/backendworker.h \
 		core/processinfo.h main.cpp \
+		gui/addservicedialog.cpp \
 		gui/mainwindow.cpp \
 		gui/processmodel.cpp \
 		core/backendworker.cpp
@@ -155,7 +161,7 @@ TARGET        = ProcessManager
 first: all
 ####### Build rules
 
-ProcessManager: ui_mainwindow.h $(OBJECTS)  
+ProcessManager: ui_mainwindow.h ui_addservicedialog.h $(OBJECTS)  
 	$(LINK) $(LFLAGS) -o $(TARGET) $(OBJECTS) $(OBJCOMP) $(LIBS)
 
 Makefile: ProcessManager.pro /usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++/qmake.conf /usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/spec_pre.prf \
@@ -326,9 +332,9 @@ distdir: FORCE
 	@test -d $(DISTDIR) || mkdir -p $(DISTDIR)
 	$(COPY_FILE) --parents $(DIST) $(DISTDIR)/
 	$(COPY_FILE) --parents /usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/data/dummy.cpp $(DISTDIR)/
-	$(COPY_FILE) --parents gui/mainwindow.h gui/processmodel.h core/backendworker.h core/processinfo.h $(DISTDIR)/
-	$(COPY_FILE) --parents main.cpp gui/mainwindow.cpp gui/processmodel.cpp core/backendworker.cpp $(DISTDIR)/
-	$(COPY_FILE) --parents gui/mainwindow.ui $(DISTDIR)/
+	$(COPY_FILE) --parents gui/mainwindow.h gui/addservicedialog.h gui/processmodel.h core/backendworker.h core/processinfo.h $(DISTDIR)/
+	$(COPY_FILE) --parents main.cpp gui/addservicedialog.cpp gui/mainwindow.cpp gui/processmodel.cpp core/backendworker.cpp $(DISTDIR)/
+	$(COPY_FILE) --parents gui/mainwindow.ui gui/addservicedialog.ui $(DISTDIR)/
 
 
 clean: compiler_clean 
@@ -360,13 +366,20 @@ compiler_moc_predefs_clean:
 moc_predefs.h: /usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/data/dummy.cpp
 	g++ -pipe -O2 -Wall -W -dM -E -o moc_predefs.h /usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/data/dummy.cpp
 
-compiler_moc_header_make_all: moc_mainwindow.cpp moc_processmodel.cpp moc_backendworker.cpp
+compiler_moc_header_make_all: moc_mainwindow.cpp moc_addservicedialog.cpp moc_processmodel.cpp moc_backendworker.cpp
 compiler_moc_header_clean:
-	-$(DEL_FILE) moc_mainwindow.cpp moc_processmodel.cpp moc_backendworker.cpp
+	-$(DEL_FILE) moc_mainwindow.cpp moc_addservicedialog.cpp moc_processmodel.cpp moc_backendworker.cpp
 moc_mainwindow.cpp: gui/mainwindow.h \
+		core/processinfo.h \
 		moc_predefs.h \
 		/usr/lib/qt5/bin/moc
 	/usr/lib/qt5/bin/moc $(DEFINES) --include /root/workspace/proc_manager/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/root/workspace/proc_manager -I/root/workspace/proc_manager/gui -I/root/workspace/proc_manager/core -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/9 -I/usr/include/x86_64-linux-gnu/c++/9 -I/usr/include/c++/9/backward -I/usr/lib/gcc/x86_64-linux-gnu/9/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include gui/mainwindow.h -o moc_mainwindow.cpp
+
+moc_addservicedialog.cpp: gui/addservicedialog.h \
+		core/processinfo.h \
+		moc_predefs.h \
+		/usr/lib/qt5/bin/moc
+	/usr/lib/qt5/bin/moc $(DEFINES) --include /root/workspace/proc_manager/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/root/workspace/proc_manager -I/root/workspace/proc_manager/gui -I/root/workspace/proc_manager/core -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/9 -I/usr/include/x86_64-linux-gnu/c++/9 -I/usr/include/c++/9/backward -I/usr/lib/gcc/x86_64-linux-gnu/9/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include gui/addservicedialog.h -o moc_addservicedialog.cpp
 
 moc_processmodel.cpp: gui/processmodel.h \
 		core/processinfo.h \
@@ -384,12 +397,16 @@ compiler_moc_objc_header_make_all:
 compiler_moc_objc_header_clean:
 compiler_moc_source_make_all:
 compiler_moc_source_clean:
-compiler_uic_make_all: ui_mainwindow.h
+compiler_uic_make_all: ui_mainwindow.h ui_addservicedialog.h
 compiler_uic_clean:
-	-$(DEL_FILE) ui_mainwindow.h
+	-$(DEL_FILE) ui_mainwindow.h ui_addservicedialog.h
 ui_mainwindow.h: gui/mainwindow.ui \
 		/usr/lib/qt5/bin/uic
 	/usr/lib/qt5/bin/uic gui/mainwindow.ui -o ui_mainwindow.h
+
+ui_addservicedialog.h: gui/addservicedialog.ui \
+		/usr/lib/qt5/bin/uic
+	/usr/lib/qt5/bin/uic gui/addservicedialog.ui -o ui_addservicedialog.h
 
 compiler_yacc_decl_make_all:
 compiler_yacc_decl_clean:
@@ -401,12 +418,19 @@ compiler_clean: compiler_moc_predefs_clean compiler_moc_header_clean compiler_ui
 
 ####### Compile
 
-main.o: main.cpp gui/mainwindow.h
+main.o: main.cpp gui/mainwindow.h \
+		core/processinfo.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o main.o main.cpp
 
-mainwindow.o: gui/mainwindow.cpp gui/mainwindow.h \
-		core/backendworker.h \
+addservicedialog.o: gui/addservicedialog.cpp gui/addservicedialog.h \
 		core/processinfo.h \
+		ui_addservicedialog.h
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o addservicedialog.o gui/addservicedialog.cpp
+
+mainwindow.o: gui/mainwindow.cpp gui/mainwindow.h \
+		core/processinfo.h \
+		gui/addservicedialog.h \
+		core/backendworker.h \
 		gui/processmodel.h \
 		ui_mainwindow.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o mainwindow.o gui/mainwindow.cpp
@@ -421,6 +445,9 @@ backendworker.o: core/backendworker.cpp core/backendworker.h \
 
 moc_mainwindow.o: moc_mainwindow.cpp 
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o moc_mainwindow.o moc_mainwindow.cpp
+
+moc_addservicedialog.o: moc_addservicedialog.cpp 
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o moc_addservicedialog.o moc_addservicedialog.cpp
 
 moc_processmodel.o: moc_processmodel.cpp 
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o moc_processmodel.o moc_processmodel.cpp

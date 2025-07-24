@@ -1,0 +1,19 @@
+{
+    "args": [
+        "/root/workspace/scripts/test.sh"
+    ],
+    "autoStart": false,
+    "command": "/bin/bash",
+    "id": "db-backup-task",
+    "name": "test",
+    "pidFile": "backup-task.pid",
+    "schedule": {
+        "dayOfMonth": 0,
+        "dayOfWeek": 0,
+        "hour": 9,
+        "minute": 30,
+        "type": "daily"
+    },
+    "type": "task",
+    "workingDir": "/root/workspace/scripts"
+}

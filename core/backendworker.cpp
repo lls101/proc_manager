@@ -1,5 +1,8 @@
 #include "backendworker.h"
 
+#include <signal.h>
+#include <sys/types.h>
+
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDebug>
@@ -18,7 +21,8 @@
 #include <signal.h>
 #include <sys/types.h>
 
-BackendWorker::BackendWorker(QObject *parent) : QObject(parent) {
+BackendWorker::BackendWorker(QObject *parent) : QObject(parent)
+{
     m_prevSystemWorkTime = 0;
     m_prevSystemTotalTime = 0;
 
@@ -33,17 +37,20 @@ BackendWorker::BackendWorker(QObject *parent) : QObject(parent) {
 
 BackendWorker::~BackendWorker() {}
 
-void BackendWorker::performInitialSetup() {
+void BackendWorker::performInitialSetup()
+{
     // --- 1. 初始化日志与pids目录 ---
     emit logMessage(QString::fromUtf8("后台线程：开始初始化设置..."));
 
     QString pidsPath = QCoreApplication::applicationDirPath() + "/pids";
     QDir pidsDir(pidsPath);
-    if (!pidsDir.exists()) {
+    if (!pidsDir.exists())
+    {
         emit logMessage(
             QString::fromUtf8("后台线程：'pids' 目录不存在，正在创建于: %1")
                 .arg(pidsPath));
-        if (!pidsDir.mkpath(".")) {
+        if (!pidsDir.mkpath("."))
+        {
             emit logMessage(
                 QString::fromUtf8("[严重错误] 无法创建 'pids' "
                                   "目录！PID文件功能可能无法正常使用！"));
@@ -53,7 +60,8 @@ void BackendWorker::performInitialSetup() {
     // --- 2. 查找并解析所有JSON配置文件 ---
     QString configPath = QCoreApplication::applicationDirPath() + "/configs";
     QDir configDir(configPath);
-    if (!configDir.exists()) {
+    if (!configDir.exists())
+    {
         emit logMessage(
             QString::fromUtf8("[错误] 'configs' 目录未找到，路径: %1")
                 .arg(configPath));
@@ -64,19 +72,22 @@ void BackendWorker::performInitialSetup() {
     nameFilters << "*.json";
     QStringList files = configDir.entryList(
         nameFilters, QDir::Files | QDir::Readable, QDir::Name);
-    if (files.isEmpty()) {
+    if (files.isEmpty())
+    {
         emit logMessage(QString::fromUtf8(
             "[警告] 在 'configs' 目录中没有找到任何.json配置文件。"));
     }
 
     m_processConfigs.clear();
 
-    for (int i = 0; i < files.count(); ++i) {
+    for (int i = 0; i < files.count(); ++i)
+    {
         QString filePath = configDir.absoluteFilePath(files.at(i));
         emit logMessage(
             QString::fromUtf8("后台线程：正在解析 %1").arg(files.at(i)));
         QFile file(filePath);
-        if (!file.open(QIODevice::ReadOnly)) {
+        if (!file.open(QIODevice::ReadOnly))
+        {
             emit logMessage(
                 QString::fromUtf8("[错误] 打开文件失败: %1").arg(filePath));
             continue;
@@ -87,13 +98,15 @@ void BackendWorker::performInitialSetup() {
             QJsonDocument::fromJson(file.readAll(), &parseError);
         file.close();
 
-        if (parseError.error != QJsonParseError::NoError) {
+        if (parseError.error != QJsonParseError::NoError)
+        {
             emit logMessage(QString::fromUtf8("[错误] JSON解析失败 %1: %2")
                                 .arg(files.at(i))
                                 .arg(parseError.errorString()));
             continue;
         }
-        if (!doc.isObject()) {
+        if (!doc.isObject())
+        {
             emit logMessage(
                 QString::fromUtf8("[错误] JSON根元素不是一个对象: %1")
                     .arg(files.at(i)));
@@ -109,25 +122,32 @@ void BackendWorker::performInitialSetup() {
         p.workingDir = obj["workingDir"].toString();
         p.autoStart = obj["autoStart"].toBool(false);
 
-        if (obj.contains("args") && obj["args"].isArray()) {
+        if (obj.contains("args") && obj["args"].isArray())
+        {
             QJsonArray argsArray = obj["args"].toArray();
-            for (int j = 0; j < argsArray.size(); ++j) {
+            for (int j = 0; j < argsArray.size(); ++j)
+            {
                 p.args.append(argsArray[j].toString());
             }
         }
 
         QString pidFileFromJson = obj["pidFile"].toString();
-        if (!pidFileFromJson.isEmpty()) {
+        if (!pidFileFromJson.isEmpty())
+        {
             QFileInfo fileInfo(pidFileFromJson);
-            if (fileInfo.isRelative()) {
+            if (fileInfo.isRelative())
+            {
                 p.pidFile = pidsDir.filePath(pidFileFromJson);
-            } else {
+            }
+            else
+            {
                 p.pidFile = pidFileFromJson;
             }
         }
 
         if (p.type == "task" && obj.contains("schedule") &&
-            obj["schedule"].isObject()) {
+            obj["schedule"].isObject())
+        {
             QJsonObject scheduleObj = obj["schedule"].toObject();
             p.schedule.type = scheduleObj["type"].toString();
             p.schedule.dayOfWeek = scheduleObj["dayOfWeek"].toInt(0);
@@ -136,7 +156,8 @@ void BackendWorker::performInitialSetup() {
             p.schedule.minute = scheduleObj["minute"].toInt(-1);
         }
 
-        if (obj.contains("healthCheck") && obj["healthCheck"].isObject()) {
+        if (obj.contains("healthCheck") && obj["healthCheck"].isObject())
+        {
             QJsonObject healthCheckObj = obj["healthCheck"].toObject();
             p.healthCheckEnabled = healthCheckObj["enabled"].toBool(false);
             p.maxCpu = healthCheckObj["maxCpu"].toDouble(0.0);
@@ -150,11 +171,13 @@ void BackendWorker::performInitialSetup() {
     emit logMessage(
         QString::fromUtf8("后台线程：执行启动时PID文件健康检查..."));
     QList<QString> all_ids = m_processConfigs.keys();
-    for (int i = 0; i < all_ids.count(); ++i) {
+    for (int i = 0; i < all_ids.count(); ++i)
+    {
         QString id = all_ids.at(i);
         ProcessInfo config = m_processConfigs.value(id);
 
-        if (config.pidFile.isEmpty() || !QFile::exists(config.pidFile)) {
+        if (config.pidFile.isEmpty() || !QFile::exists(config.pidFile))
+        {
             continue;
         }
 
@@ -163,7 +186,8 @@ void BackendWorker::performInitialSetup() {
         qint64 pid = pidFile.readAll().trimmed().toLongLong();
         pidFile.close();
 
-        if (pid <= 0) {
+        if (pid <= 0)
+        {
             emit logMessage(QString::fromUtf8(
                                 "[清理] 服务 %1 的PID文件内容无效，正在删除...")
                                 .arg(id));
@@ -171,7 +195,8 @@ void BackendWorker::performInitialSetup() {
             continue;
         }
 
-        if (::kill(pid, 0) != 0) {
+        if (::kill(pid, 0) != 0)
+        {
             emit logMessage(
                 QString::fromUtf8(
                     "[清理] 检测到服务 %1 的过时PID文件 (PID: %2)，正在删除...")
@@ -196,15 +221,18 @@ void BackendWorker::performInitialSetup() {
     emit logMessage(QString::fromUtf8("后台线程：计划任务调度器已启动。"));
 }
 
-void BackendWorker::startProcess(const QString &id) {
-    if (!m_processConfigs.contains(id)) {
+void BackendWorker::startProcess(const QString &id)
+{
+    if (!m_processConfigs.contains(id))
+    {
         emit logMessage(
             QString::fromUtf8("[错误] 尝试启动一个未知的服务ID: %1").arg(id));
         return;
     }
 
     ProcessInfo config = m_processConfigs.value(id);
-    if (!config.pidFile.isEmpty() && QFile::exists(config.pidFile)) {
+    if (!config.pidFile.isEmpty() && QFile::exists(config.pidFile))
+    {
         emit logMessage(
             QString::fromUtf8("[警告] 服务 %1 的PID文件已存在，可能已在运行。")
                 .arg(id));
@@ -221,14 +249,16 @@ void BackendWorker::startProcess(const QString &id) {
     bool success = QProcess::startDetached(config.command, config.args,
                                            config.workingDir, &pid);
 
-    if (success && pid > 0) {
+    if (success && pid > 0)
+    {
         emit logMessage(QString::fromUtf8("服务 %1 已成功脱离启动, PID: %2。")
                             .arg(id)
                             .arg(pid));
 
         QFile pidFile(config.pidFile);
         if (!pidFile.open(QIODevice::WriteOnly | QIODevice::Truncate |
-                          QIODevice::Text)) {
+                          QIODevice::Text))
+        {
             emit logMessage(
                 QString::fromUtf8("[严重错误] 无法为脱离进程创建PID文件 "
                                   "%1！该进程将无法被管理！")
@@ -239,8 +269,9 @@ void BackendWorker::startProcess(const QString &id) {
         QTextStream out(&pidFile);
         out << pid;
         pidFile.close();
-
-    } else {
+    }
+    else
+    {
         emit logMessage(
             QString::fromUtf8("[严重错误] 服务 %1 脱离启动失败！").arg(id));
         m_processConfigs[id].status = "Error";
@@ -248,20 +279,25 @@ void BackendWorker::startProcess(const QString &id) {
     }
 }
 
-void BackendWorker::stopProcess(const QString &id) {
-    if (!m_processConfigs.contains(id)) return;
+void BackendWorker::stopProcess(const QString &id)
+{
+    if (!m_processConfigs.contains(id))
+        return;
 
     ProcessInfo config = m_processConfigs.value(id);
-    if (config.pidFile.isEmpty()) return;
+    if (config.pidFile.isEmpty())
+        return;
 
     qint64 pid = 0;
     QFile pidFile(config.pidFile);
-    if (pidFile.open(QIODevice::ReadOnly)) {
+    if (pidFile.open(QIODevice::ReadOnly))
+    {
         pid = pidFile.readAll().trimmed().toLongLong();
         pidFile.close();
     }
 
-    if (pid <= 0) return;
+    if (pid <= 0)
+        return;
 
     emit logMessage(
         QString::fromUtf8(
@@ -272,7 +308,8 @@ void BackendWorker::stopProcess(const QString &id) {
     emit processStatusChanged(id, "Stopping...", pid, 0.0, 0.0);
     m_processConfigs[id].status = "Stopping...";
 
-    if (::kill(pid, SIGTERM) == 0) {
+    if (::kill(pid, SIGTERM) == 0)
+    {
         emit logMessage(
             QString::fromUtf8("成功发送SIGTERM到PID %1。等待10秒...").arg(pid));
 
@@ -284,47 +321,58 @@ void BackendWorker::stopProcess(const QString &id) {
         connect(shutdownTimer, SIGNAL(timeout()), this,
                 SLOT(onGracefulShutdownTimeout()));
         shutdownTimer->start(10000);
-
-    } else {
+    }
+    else
+    {
         emit logMessage(
             QString::fromUtf8(
                 "[错误] 发送SIGTERM到PID %1 失败。可能进程已不存在或权限不足。")
                 .arg(pid));
-        if (m_processConfigs[id].status != "Stopped") {
+        if (m_processConfigs[id].status != "Stopped")
+        {
             m_processConfigs[id].status = "Stopped";
             emit processStatusChanged(id, "Stopped", 0, 0.0, 0.0);
         }
     }
 }
 
-void BackendWorker::restartProcess(const QString &id) {
+void BackendWorker::restartProcess(const QString &id)
+{
     emit logMessage(QString::fromUtf8("后台线程：收到重启请求: %1。").arg(id));
-    this->stopProcess(id);
+    if (!m_restartQueue.contains(id))
+    {
+        m_restartQueue.append(id);
+    }
 
-    m_lastToStartForRestart = id;
-    QTimer::singleShot(1000, this, SIGNAL(delayedStartSignal()));
+    this->stopProcess(id);
 }
 
-void BackendWorker::onDelayedStart() {
-    if (!m_lastToStartForRestart.isEmpty()) {
+void BackendWorker::onDelayedStart()
+{
+    if (!m_lastToStartForRestart.isEmpty())
+    {
         startProcess(m_lastToStartForRestart);
         m_lastToStartForRestart.clear();
     }
 }
 
-void BackendWorker::onGracefulShutdownTimeout() {
+void BackendWorker::onGracefulShutdownTimeout()
+{
     QTimer *timer = qobject_cast<QTimer *>(sender());
-    if (!timer) return;
+    if (!timer)
+        return;
 
     qint64 pid = timer->objectName().toLongLong();
-    if (pid <= 0 || !m_shutdownPidToIdMap.contains(pid)) {
+    if (pid <= 0 || !m_shutdownPidToIdMap.contains(pid))
+    {
         timer->deleteLater();
         return;
     }
 
     QString id = m_shutdownPidToIdMap.value(pid);
 
-    if (::kill(pid, 0) == 0) {
+    if (::kill(pid, 0) == 0)
+    {
         emit logMessage(
             QString::fromUtf8("[警告] 服务 %1 (PID: %2) "
                               "未能在10秒内优雅退出。强制终止 (SIGKILL)...")
@@ -337,26 +385,33 @@ void BackendWorker::onGracefulShutdownTimeout() {
     timer->deleteLater();
 }
 
-void BackendWorker::onMonitorTimeout() {
+void BackendWorker::onMonitorTimeout()
+{
     // --- 1. 更新系统全局资源 ---
     QFile memFile("/proc/meminfo");
     double memPercent = -1.0;
-    if (memFile.open(QIODevice::ReadOnly)) {
+    if (memFile.open(QIODevice::ReadOnly))
+    {
         QByteArray content = memFile.readAll();
         memFile.close();
-        if (content.size() > 0) {
+        if (content.size() > 0)
+        {
             QString contentStr(content);
             QStringList lines = contentStr.split('\n');
             long long memTotal = 0, memAvailable = 0;
-            for (int i = 0; i < lines.count(); ++i) {
+            for (int i = 0; i < lines.count(); ++i)
+            {
                 const QString &line = lines.at(i);
-                if (line.startsWith("MemTotal:")) {
+                if (line.startsWith("MemTotal:"))
+                {
                     memTotal = line.section(':', 1)
                                    .trimmed()
                                    .split(' ')
                                    .at(0)
                                    .toLongLong();
-                } else if (line.startsWith("MemAvailable:")) {
+                }
+                else if (line.startsWith("MemAvailable:"))
+                {
                     memAvailable = line.section(':', 1)
                                        .trimmed()
                                        .split(' ')
@@ -364,7 +419,8 @@ void BackendWorker::onMonitorTimeout() {
                                        .toLongLong();
                 }
             }
-            if (memTotal > 0 && memAvailable >= 0) {
+            if (memTotal > 0 && memAvailable >= 0)
+            {
                 long long memUsed = memTotal - memAvailable;
                 memPercent = ((double)(memUsed * 100.0) / memTotal);
             }
@@ -375,11 +431,13 @@ void BackendWorker::onMonitorTimeout() {
     unsigned long long currentSystemTotalTime = 0;
     unsigned long long currentSystemWorkTime = 0;
     double cpuPercent = 0.0;
-    if (statFile.open(QIODevice::ReadOnly)) {
+    if (statFile.open(QIODevice::ReadOnly))
+    {
         QString line = statFile.readLine();
         statFile.close();
         QStringList parts = line.split(' ', QString::SkipEmptyParts);
-        if (parts.front() == "cpu") {
+        if (parts.front() == "cpu")
+        {
             unsigned long long user = parts.at(1).toULongLong();
             unsigned long long nice = parts.at(2).toULongLong();
             unsigned long long system = parts.at(3).toULongLong();
@@ -390,12 +448,14 @@ void BackendWorker::onMonitorTimeout() {
     }
 
     if (m_prevSystemTotalTime > 0 &&
-        currentSystemTotalTime > m_prevSystemTotalTime) {
+        currentSystemTotalTime > m_prevSystemTotalTime)
+    {
         unsigned long long totalDelta =
             currentSystemTotalTime - m_prevSystemTotalTime;
         unsigned long long workDelta =
             currentSystemWorkTime - m_prevSystemWorkTime;
-        if (totalDelta > 0) {
+        if (totalDelta > 0)
+        {
             cpuPercent = (double)(workDelta * 100.0) / totalDelta;
         }
     }
@@ -403,51 +463,61 @@ void BackendWorker::onMonitorTimeout() {
 
     // --- 2. 遍历所有已配置的服务，更新状态 ---
     QList<QString> all_ids = m_processConfigs.keys();
-    for (int i = 0; i < all_ids.count(); ++i) {
+    for (int i = 0; i < all_ids.count(); ++i)
+    {
         QString id = all_ids.at(i);
         ProcessInfo config = m_processConfigs.value(id);
 
-        if (config.pidFile.isEmpty()) continue;
+        if (config.pidFile.isEmpty())
+            continue;
 
         qint64 current_pid = 0;
         QFile pidFile(config.pidFile);
-        if (pidFile.exists() && pidFile.open(QIODevice::ReadOnly)) {
+        if (pidFile.exists() && pidFile.open(QIODevice::ReadOnly))
+        {
             current_pid = pidFile.readAll().trimmed().toLongLong();
             pidFile.close();
         }
 
         bool process_exists = (current_pid > 0 && ::kill(current_pid, 0) == 0);
 
-        if (process_exists) {
+        if (process_exists)
+        {
             double processCpuUsage = 0.0;
             double processMemUsage = 0.0;
 
             QFile procMemFile(QString("/proc/%1/statm").arg(current_pid));
-            if (procMemFile.open(QIODevice::ReadOnly)) {
+            if (procMemFile.open(QIODevice::ReadOnly))
+            {
                 QStringList parts = QString(procMemFile.readAll()).split(' ');
-                if (parts.size() > 1) {
+                if (parts.size() > 1)
+                {
                     processMemUsage = parts.at(1).toLongLong() * 4 / 1024.0;
                 }
                 procMemFile.close();
             }
 
             QFile procStatFile(QString("/proc/%1/stat").arg(current_pid));
-            if (procStatFile.open(QIODevice::ReadOnly)) {
+            if (procStatFile.open(QIODevice::ReadOnly))
+            {
                 QString content = procStatFile.readAll();
                 procStatFile.close();
                 QStringList parts =
                     content.mid(content.indexOf(')') + 2).split(' ');
-                if (parts.size() > 13) {
+                if (parts.size() > 13)
+                {
                     unsigned long long processTotalTime =
                         parts.at(11).toULongLong() + parts.at(12).toULongLong();
                     if (m_prevProcessTime.contains(id) &&
                         m_prevSystemTotalTime > 0 &&
-                        currentSystemTotalTime > m_prevSystemTotalTime) {
+                        currentSystemTotalTime > m_prevSystemTotalTime)
+                    {
                         unsigned long long processDelta =
                             processTotalTime - m_prevProcessTime.value(id);
                         unsigned long long systemDelta =
                             currentSystemTotalTime - m_prevSystemTotalTime;
-                        if (systemDelta > 0) {
+                        if (systemDelta > 0)
+                        {
                             processCpuUsage = (double)(processDelta * 100.0) /
                                               (double)systemDelta;
                         }
@@ -456,28 +526,35 @@ void BackendWorker::onMonitorTimeout() {
                 }
             }
 
-            if (m_processConfigs[id].status != "Running") {
+            if (m_processConfigs[id].status != "Running")
+            {
                 m_processConfigs[id].status = "Running";
             }
             emit processStatusChanged(id, "Running", current_pid,
                                       processCpuUsage, processMemUsage);
 
-            if (config.healthCheckEnabled) {
+            if (config.healthCheckEnabled)
+            {
                 bool isBreached = false;
                 QString breachReason;
-                if (config.maxCpu > 0 && processCpuUsage > config.maxCpu) {
+                if (config.maxCpu > 0 && processCpuUsage > config.maxCpu)
+                {
                     isBreached = true;
                     breachReason = "CPU";
-                } else if (config.maxMem > 0 &&
-                           processMemUsage > config.maxMem) {
+                }
+                else if (config.maxMem > 0 &&
+                         processMemUsage > config.maxMem)
+                {
                     isBreached = true;
                     breachReason = "Memory";
                 }
 
-                if (isBreached) {
+                if (isBreached)
+                {
                     int count = m_breachCounters.value(id, 0) + 1;
                     m_breachCounters[id] = count;
-                    if (count >= 3) {
+                    if (count >= 3)
+                    {
                         emit logMessage(
                             QString::fromUtf8(
                                 "[自愈] 服务 %1 因 %2 持续超标，触发重启。")
@@ -486,36 +563,60 @@ void BackendWorker::onMonitorTimeout() {
                         restartProcess(id);
                         m_breachCounters.remove(id);
                     }
-                } else {
+                }
+                else
+                {
                     m_breachCounters.remove(id);
                 }
             }
-
-        } else {
+        }
+        else
+        {
             // 进程不存在
-            if (config.status == "Running") {
-                emit logMessage(
-                    QString::fromUtf8("[警告] 正在运行的服务 %1 "
-                                      "已意外终止！PID文件或进程已消失。")
-                        .arg(id));
-
-                QFile deadPidFile(config.pidFile);
-                if (deadPidFile.exists()) {
-                    deadPidFile.remove();
-                    emit logMessage(
-                        QString::fromUtf8("残留的PID文件 %1 已被清理。")
-                            .arg(config.pidFile));
+            if (config.status == "Running" || config.status == "Stopping...")
+            {
+                // 根据具体状态，打印不同的日志，让信息更清晰
+                if (config.status == "Running")
+                {
+                    // 如果是从"Running"状态直接消失，说明是意外终止
+                    emit logMessage(QString::fromUtf8("[警告] 正在运行的服务 %1 已意外终止！PID文件或进程已消失。").arg(id));
+                }
+                else
+                { // config.status == "Stopping..."
+                    // 如果是从"Stopping"状态消失，说明是我们的 kill 命令成功了
+                    emit logMessage(QString::fromUtf8("服务 %1 已成功停止。").arg(id));
                 }
 
-                if (config.autoStart) {
-                    emit logMessage(
-                        QString::fromUtf8("[自愈] 服务 %1 将自动重启...")
-                            .arg(id));
-                    restartProcess(id);
+                // 无论以上哪种情况，都需要清理PID文件
+                QFile deadPidFile(config.pidFile);
+                if (deadPidFile.exists())
+                {
+                    if (deadPidFile.remove())
+                    {
+                        emit logMessage(QString::fromUtf8("PID文件 %1 已被清理。").arg(config.pidFile));
+                    }
+                }
+
+                if (m_restartQueue.contains(id))
+                {
+                    m_restartQueue.removeAll(id); // 从队列中移除
+                    emit logMessage(QString::fromUtf8("[重启] 服务 %1 已完全停止，现在执行重启操作...").arg(id));
+                    // 直接调用startProcess，因为此时环境一定是干净的
+                    startProcess(id);
+                }
+                else if (config.status == "Running" && config.autoStart)
+                {
+                    emit logMessage(QString::fromUtf8("[自愈] 服务 %1 将自动重启...").arg(id));
+                    // 同样使用重启队列机制，确保逻辑统一
+                    if (!m_restartQueue.contains(id))
+                    {
+                        m_restartQueue.append(id);
+                    }
                 }
             }
 
-            if (m_processConfigs[id].status != "Stopped") {
+            if (m_processConfigs[id].status != "Stopped")
+            {
                 m_processConfigs[id].status = "Stopped";
                 emit processStatusChanged(id, "Stopped", 0, 0.0, 0.0);
             }
@@ -527,36 +628,44 @@ void BackendWorker::onMonitorTimeout() {
     m_prevSystemWorkTime = currentSystemWorkTime;
 }
 
-void BackendWorker::onSchedulerTick() {
+void BackendWorker::onSchedulerTick()
+{
     QDateTime now = QDateTime::currentDateTime();
 
     for (QMap<QString, ProcessInfo>::iterator it = m_processConfigs.begin();
-         it != m_processConfigs.end(); ++it) {
+         it != m_processConfigs.end(); ++it)
+    {
         const ProcessInfo &task = it.value();
 
-        if (task.type != "task") {
+        if (task.type != "task")
+        {
             continue;
         }
 
         // 检查进程是否已在运行
         bool isRunning = false;
-        if (!task.pidFile.isEmpty()) {
+        if (!task.pidFile.isEmpty())
+        {
             QFile pidFile(task.pidFile);
-            if (pidFile.exists() && pidFile.open(QIODevice::ReadOnly)) {
+            if (pidFile.exists() && pidFile.open(QIODevice::ReadOnly))
+            {
                 qint64 pid = pidFile.readAll().trimmed().toLongLong();
                 pidFile.close();
-                if (pid > 0 && ::kill(pid, 0) == 0) {
+                if (pid > 0 && ::kill(pid, 0) == 0)
+                {
                     isRunning = true;
                 }
             }
         }
-        if (isRunning) continue;
+        if (isRunning)
+            continue;
 
         QDateTime nextDueTime =
             calculateNextDueTime(task.schedule, m_lastSchedulerCheckTime);
 
         if (!nextDueTime.isNull() && nextDueTime > m_lastSchedulerCheckTime &&
-            nextDueTime <= now) {
+            nextDueTime <= now)
+        {
             emit logMessage(QString::fromUtf8(
                                 "[调度器] 任务 '%1' 已到执行时间，正在启动...")
                                 .arg(task.name));
@@ -568,8 +677,10 @@ void BackendWorker::onSchedulerTick() {
 }
 
 QDateTime BackendWorker::calculateNextDueTime(
-    const ProcessInfo::Schedule &schedule, const QDateTime &after) {
-    if (schedule.hour < 0 || schedule.minute < 0) {
+    const ProcessInfo::Schedule &schedule, const QDateTime &after)
+{
+    if (schedule.hour < 0 || schedule.minute < 0)
+    {
         return QDateTime();
     }
 
@@ -578,30 +689,41 @@ QDateTime BackendWorker::calculateNextDueTime(
     QTime nextTime(schedule.hour, schedule.minute);
     next.setTime(nextTime);
 
-    if (schedule.type == "daily") {
-        if (next <= after) {
+    if (schedule.type == "daily")
+    {
+        if (next <= after)
+        {
             next = next.addDays(1);
         }
         return next;
-    } else if (schedule.type == "weekly") {
+    }
+    else if (schedule.type == "weekly")
+    {
         if (schedule.dayOfWeek < 1 || schedule.dayOfWeek > 7)
             return QDateTime();
 
         int daysToAdd = schedule.dayOfWeek - nextDate.dayOfWeek();
-        if (daysToAdd < 0) {
+        if (daysToAdd < 0)
+        {
             daysToAdd += 7;
         }
         next = next.addDays(daysToAdd);
 
-        if (next <= after) {
+        if (next <= after)
+        {
             next = next.addDays(7);
         }
         return next;
-    } else if (schedule.type == "monthly") {
-        if (schedule.dayOfMonth < 1) return QDateTime();
+    }
+    else if (schedule.type == "monthly")
+    {
+        if (schedule.dayOfMonth < 1)
+            return QDateTime();
 
-        for (int i = 0; i < 12; ++i) {
-            if (schedule.dayOfMonth > nextDate.daysInMonth()) {
+        for (int i = 0; i < 12; ++i)
+        {
+            if (schedule.dayOfMonth > nextDate.daysInMonth())
+            {
                 nextDate = nextDate.addMonths(1);
                 nextDate.setDate(nextDate.year(), nextDate.month(), 1);
                 continue;
@@ -610,7 +732,8 @@ QDateTime BackendWorker::calculateNextDueTime(
                              schedule.dayOfMonth);
             next.setDate(nextDate);
 
-            if (next > after) {
+            if (next > after)
+            {
                 return next;
             }
 
@@ -624,12 +747,14 @@ QDateTime BackendWorker::calculateNextDueTime(
 
 // core/backendworker.cpp
 
-void BackendWorker::onServiceAdded(const QString &newConfigPath) {
+void BackendWorker::onServiceAdded(const QString &newConfigPath)
+{
     emit logMessage(QString::fromUtf8("后台线程：收到新服务添加请求: %1")
                         .arg(newConfigPath));
 
     QFile file(newConfigPath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
         emit logMessage(QString::fromUtf8("[错误] 无法读取新添加的配置文件: %1")
                             .arg(newConfigPath));
         return;
@@ -640,14 +765,16 @@ void BackendWorker::onServiceAdded(const QString &newConfigPath) {
     QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
     file.close();
 
-    if (parseError.error != QJsonParseError::NoError) {
+    if (parseError.error != QJsonParseError::NoError)
+    {
         emit logMessage(
             QString::fromUtf8("[错误] 解析新配置文件失败: %1, 错误: %2")
                 .arg(newConfigPath)
                 .arg(parseError.errorString()));
         return;
     }
-    if (!doc.isObject()) {
+    if (!doc.isObject())
+    {
         emit logMessage(
             QString::fromUtf8("[错误] 新配置文件的根元素不是一个对象: %1")
                 .arg(newConfigPath));
@@ -665,28 +792,35 @@ void BackendWorker::onServiceAdded(const QString &newConfigPath) {
     p.workingDir = obj["workingDir"].toString();
     p.autoStart = obj["autoStart"].toBool(false);
 
-    if (obj.contains("args") && obj["args"].isArray()) {
+    if (obj.contains("args") && obj["args"].isArray())
+    {
         QJsonArray argsArray = obj["args"].toArray();
-        for (int j = 0; j < argsArray.size(); ++j) {
+        for (int j = 0; j < argsArray.size(); ++j)
+        {
             p.args.append(argsArray[j].toString());
         }
     }
 
     // 同样需要处理相对路径
     QString pidFileFromJson = obj["pidFile"].toString();
-    if (!pidFileFromJson.isEmpty()) {
+    if (!pidFileFromJson.isEmpty())
+    {
         QFileInfo fileInfo(pidFileFromJson);
-        if (fileInfo.isRelative()) {
+        if (fileInfo.isRelative())
+        {
             QString pidsPath = QCoreApplication::applicationDirPath() + "/pids";
             QDir pidsDir(pidsPath);
             p.pidFile = pidsDir.filePath(pidFileFromJson);
-        } else {
+        }
+        else
+        {
             p.pidFile = pidFileFromJson;
         }
     }
 
     if (p.type == "task" && obj.contains("schedule") &&
-        obj["schedule"].isObject()) {
+        obj["schedule"].isObject())
+    {
         QJsonObject scheduleObj = obj["schedule"].toObject();
         p.schedule.type = scheduleObj["type"].toString();
         p.schedule.dayOfWeek = scheduleObj["dayOfWeek"].toInt(0);
@@ -695,7 +829,8 @@ void BackendWorker::onServiceAdded(const QString &newConfigPath) {
         p.schedule.minute = scheduleObj["minute"].toInt(-1);
     }
 
-    if (obj.contains("healthCheck") && obj["healthCheck"].isObject()) {
+    if (obj.contains("healthCheck") && obj["healthCheck"].isObject())
+    {
         QJsonObject healthCheckObj = obj["healthCheck"].toObject();
         p.healthCheckEnabled = healthCheckObj["enabled"].toBool(false);
         p.maxCpu = healthCheckObj["maxCpu"].toDouble(0.0);
@@ -703,7 +838,8 @@ void BackendWorker::onServiceAdded(const QString &newConfigPath) {
     }
 
     // --- 3. 更新内部状态并通知UI ---
-    if (p.id.isEmpty()) {
+    if (p.id.isEmpty())
+    {
         emit logMessage(
             QString::fromUtf8("[错误] 新配置文件缺少必须的'id'字段。"));
         return;
@@ -714,4 +850,151 @@ void BackendWorker::onServiceAdded(const QString &newConfigPath) {
 
     // 发射信号，通知ProcessModel去UI上插入新的一行
     emit processInfoAdded(p);
+}
+
+void BackendWorker::onDeleteServiceRequested(const QString &id)
+{
+    if (!m_processConfigs.contains(id))
+    {
+        emit logMessage(
+            QString::fromUtf8("[错误] 尝试删除一个不存在的服务ID: %1").arg(id));
+        return;
+    }
+
+    // 1. 确定配置文件的路径
+    QString configFilePath =
+        QCoreApplication::applicationDirPath() + "/configs/" + id + ".json";
+
+    // 2. 删除配置文件
+    QFile configFile(configFilePath);
+    if (configFile.exists())
+    {
+        if (configFile.remove())
+        {
+            emit logMessage(QString::fromUtf8("配置文件 %1 已被成功删除。")
+                                .arg(configFilePath));
+        }
+        else
+        {
+            emit logMessage(
+                QString::fromUtf8(
+                    "[严重错误] 删除配置文件 %1 失败！请检查文件权限。")
+                    .arg(configFilePath));
+        }
+    }
+    else
+    {
+        emit logMessage(
+            QString::fromUtf8("[警告] 配置文件 %1 未找到，可能已被手动删除。")
+                .arg(configFilePath));
+    }
+
+    // 3. 从内存中的配置列表里移除
+    m_processConfigs.remove(id);
+
+    // 4. 发射信号，通知UI（ProcessModel）进行刷新
+    emit serviceDeleted(id);
+}
+
+void BackendWorker::onEditServiceRequested(const QString &id)
+{
+    if (m_processConfigs.contains(id))
+    {
+        // 在内存中找到对应的配置信息
+        ProcessInfo info = m_processConfigs.value(id);
+        // 发射信号，将数据回传给主窗口
+        emit serviceInfoReadyForEdit(info);
+    }
+}
+
+// core/backendworker.cpp
+
+void BackendWorker::onServiceEdited(const QString &configPath)
+{
+    emit logMessage(QString::fromUtf8("后台线程：收到服务配置更新请求: %1").arg(configPath));
+
+    QFile file(configPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        emit logMessage(QString::fromUtf8("[错误] 无法读取更新后的配置文件: %1").arg(configPath));
+        return;
+    }
+
+    // --- 1. 【补全的核心逻辑】读取并解析文件 ---
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &parseError);
+    file.close();
+
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject())
+    {
+        emit logMessage(QString::fromUtf8("[错误] 解析更新后的配置文件失败: %1").arg(configPath));
+        return;
+    }
+
+    // --- 2. 【补全的核心逻辑】填充ProcessInfo结构体 ---
+    QJsonObject obj = doc.object();
+    ProcessInfo p;
+
+    p.id = obj["id"].toString();
+    p.name = obj["name"].toString();
+    p.type = obj["type"].toString();
+    p.command = obj["command"].toString();
+    p.workingDir = obj["workingDir"].toString();
+    p.autoStart = obj["autoStart"].toBool(false);
+
+    if (obj.contains("args") && obj["args"].isArray())
+    {
+        QJsonArray argsArray = obj["args"].toArray();
+        for (int j = 0; j < argsArray.size(); ++j)
+        {
+            p.args.append(argsArray[j].toString());
+        }
+    }
+
+    QString pidFileFromJson = obj["pidFile"].toString();
+    if (!pidFileFromJson.isEmpty())
+    {
+        QFileInfo fileInfo(pidFileFromJson);
+        if (fileInfo.isRelative())
+        {
+            QString pidsPath = QCoreApplication::applicationDirPath() + "/pids";
+            QDir pidsDir(pidsPath);
+            p.pidFile = pidsDir.filePath(pidFileFromJson);
+        }
+        else
+        {
+            p.pidFile = pidFileFromJson;
+        }
+    }
+
+    if (p.type == "task" && obj.contains("schedule") && obj["schedule"].isObject())
+    {
+        QJsonObject scheduleObj = obj["schedule"].toObject();
+        p.schedule.type = scheduleObj["type"].toString();
+        p.schedule.dayOfWeek = scheduleObj["dayOfWeek"].toInt(0);
+        p.schedule.dayOfMonth = scheduleObj["dayOfMonth"].toInt(0);
+        p.schedule.hour = scheduleObj["hour"].toInt(-1);
+        p.schedule.minute = scheduleObj["minute"].toInt(-1);
+    }
+
+    if (obj.contains("healthCheck") && obj["healthCheck"].isObject())
+    {
+        QJsonObject healthCheckObj = obj["healthCheck"].toObject();
+        p.healthCheckEnabled = healthCheckObj["enabled"].toBool(false);
+        p.maxCpu = healthCheckObj["maxCpu"].toDouble(0.0);
+        p.maxMem = healthCheckObj["maxMem"].toDouble(0.0);
+    }
+
+    // --- 3. 更新内部状态并通知UI ---
+    if (p.id.isEmpty())
+    {
+        return;
+    }
+
+    // 在内存中更新(覆盖)配置
+    m_processConfigs[p.id] = p;
+    emit logMessage(QString::fromUtf8("后台线程：服务 %1 的内存配置已更新。").arg(p.id));
+
+    // 发射信号，通知ProcessModel去UI上更新对应行的数据
+    emit serviceInfoUpdated(p);
 }
